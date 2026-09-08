@@ -1,15 +1,12 @@
 Pod::Spec.new do |s|
   s.name           = 'OmarchyLink'
-  s.version        = '1.0.0'
-  s.summary        = 'A sample project summary'
-  s.description    = 'A sample project description'
-  s.author         = ''
-  s.homepage       = 'https://docs.expo.dev/modules/'
-  s.platforms      = {
-    :ios => '16.4',
-    :tvos => '16.4'
-  }
-  s.source         = { git: '' }
+  s.version        = '0.1.0'
+  s.summary        = 'Pinned local transport for Omarchy Mobile'
+  s.description    = 'Native TLS certificate pinning, file upload, and Bonjour discovery.'
+  s.author         = 'Omarchy'
+  s.homepage       = 'https://github.com/dimasmufid/omarchy'
+  s.platforms      = { :ios => '16.4' }
+  s.source         = { :path => '.' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'

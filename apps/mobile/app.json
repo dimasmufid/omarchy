@@ -1,29 +1,40 @@
 {
   "expo": {
-    "name": "HelloWorld",
-    "slug": "expo-template-blank-typescript",
-    "version": "1.0.0",
+    "name": "Omarchy",
+    "slug": "omarchy-mobile",
+    "scheme": "omarchy-mobile",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "org.omarchy.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Omarchy connects directly to your desktop on your local network.",
+        "NSBonjourServices": ["_omarchy._tcp"],
+        "NSCameraUsageDescription": "Scan the one-time QR code shown by your Omarchy desktop."
+      }
     },
     "android": {
+      "package": "org.omarchy.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0D0B12",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE"
+      ]
     },
     "plugins": [
-      "expo-secure-store",
-      "expo-sharing"
+      ["expo-camera", { "cameraPermission": "Scan the one-time QR code shown by your Omarchy desktop.", "microphonePermission": false, "recordAudioAndroid": false }],
+      ["expo-secure-store", { "configureAndroidBackup": true }]
     ]
   }
 }
