@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, Linking, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
@@ -8,9 +8,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 
 import ActionSurface from './src/ActionSurface';
+import FileConfirmationSurface from './src/FileConfirmationSurface';
 import PairingSurface from './src/PairingSurface';
 import SettingsSurface from './src/SettingsSurface';
-import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText, updateDesktopEndpoint } from './src/client';
+import TextComposerSurface from './src/TextComposerSurface';
+import { getClipboard, getStatus, lockDesktop, OmarchyClientError, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText, updateDesktopEndpoint } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
 import { parsePairingCode } from './src/model';
 import { clearPairing, loadPairing, savePairing } from './src/storage';
@@ -332,27 +334,26 @@ export default function App() {
           />
         </SafeAreaView>
       </Modal>
-      <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => {
+      <Modal visible={composerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => {
         setComposerOpen(false);
         if (composerFromShare) {
           incomingShare.clearSharedPayloads(); handledShare.current = null; setComposerFromShare(false); setSharedText('');
         }
       }}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.composer}>
-            <Text style={styles.composerTitle}>Send text or URL</Text>
-            <TextInput autoFocus multiline placeholder="What should appear in Omarchy Inbox?" style={styles.composerInput} value={sharedText} onChangeText={setSharedText} />
-            <View style={styles.composerActions}>
-              <Pressable onPress={() => {
-                setComposerOpen(false);
-                if (composerFromShare) {
-                  incomingShare.clearSharedPayloads();
-                  handledShare.current = null;
-                  setComposerFromShare(false);
-                  setSharedText('');
-                }
-              }}><Text style={styles.link}>Cancel</Text></Pressable>
-              <Pressable onPress={() => {
+        <SafeAreaView style={styles.homeRoot}>
+          <TextComposerSurface
+            value={sharedText}
+            onValueChange={setSharedText}
+            onCancel={() => {
+              setComposerOpen(false);
+              if (composerFromShare) {
+                incomingShare.clearSharedPayloads();
+                handledShare.current = null;
+                setComposerFromShare(false);
+                setSharedText('');
+              }
+            }}
+            onSend={() => {
                 const value = sharedText.trim();
                 if (!value) return;
                 const cameFromShare = composerFromShare;
@@ -367,62 +368,55 @@ export default function App() {
                     setComposerOpen(true);
                   }
                 });
-              }}><Text style={styles.linkStrong}>Send</Text></Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+            }}
+          />
+        </SafeAreaView>
       </Modal>
-      <Modal visible={incomingFile !== null} transparent animationType="fade" onRequestClose={() => {
+      <Modal visible={incomingFile !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => {
         if (transferController.current) transferController.current.abort();
         else dismissFile();
       }}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.composer}>
-            <Text style={styles.composerTitle}>{incomingFile?.fromShare ? 'Send shared file?' : 'Send this file?'}</Text>
-            <Text style={styles.fileName}>{incomingFile?.name}</Text>
-            <Text style={styles.fileMeta}>{incomingFile?.size === undefined ? 'Size will be checked before sending' : formatBytes(incomingFile.size)} · to {desktop.desktopName}</Text>
-            {transferProgress ? (
-              <View accessibilityRole="progressbar" accessibilityValue={{
-                min: 0,
-                max: transferProgress.total || 1,
-                now: transferProgress.sent,
-              }}>
-                <View style={styles.progressTrack}>
-                  <View style={[
-                    styles.progressFill,
-                    { width: `${transferPercent(transferProgress.sent, transferProgress.total)}%` },
-                  ]} />
-                </View>
-                <Text style={styles.fileMeta}>
-                  {transferProgress.total > 0
-                    ? `${formatBytes(transferProgress.sent)} of ${formatBytes(transferProgress.total)}`
-                    : 'Preparing secure transfer…'}
-                </Text>
-              </View>
-            ) : null}
-            <View style={styles.composerActions}>
-              <Pressable onPress={() => {
-                if (transferController.current) {
-                  transferController.current.abort();
-                  setMessage('Canceling file transfer…');
-                } else {
-                  dismissFile();
-                }
-              }}><Text style={styles.link}>{transferProgress ? 'Cancel transfer' : 'Cancel'}</Text></Pressable>
-              {!transferProgress ? (
-                <Pressable onPress={() => {
-                  if (incomingFile) startFileTransfer(incomingFile);
-                }}><Text style={styles.linkStrong}>Send</Text></Pressable>
-              ) : null}
-            </View>
-          </View>
-        </View>
+        <SafeAreaView style={styles.homeRoot}>
+          <FileConfirmationSurface
+            title={incomingFile?.fromShare ? 'Send shared file?' : 'Send this file?'}
+            fileName={incomingFile?.name ?? 'Selected file'}
+            fileMeta={`${incomingFile?.size === undefined ? 'Size will be checked before sending' : formatBytes(incomingFile.size)} · to ${desktop.desktopName}`}
+            progress={transferProgress ? transferPercent(transferProgress.sent, transferProgress.total) / 100 : 0}
+            progressLabel={transferProgress ? (transferProgress.total > 0 ? `${formatBytes(transferProgress.sent)} of ${formatBytes(transferProgress.total)}` : 'Preparing secure transfer…') : ''}
+            transferring={transferProgress !== null}
+            onCancel={() => {
+              if (transferController.current) {
+                transferController.current.abort();
+                setMessage('Canceling file transfer…');
+              } else {
+                dismissFile();
+              }
+            }}
+            onSend={() => { if (incomingFile) startFileTransfer(incomingFile); }}
+          />
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 function errorMessage(error: unknown): string {
+  if (error instanceof OmarchyClientError) {
+    switch (error.code) {
+      case 'pair.rejected':
+        return 'Pairing was rejected on the desktop.';
+      case 'pair.expired':
+      case 'pair.closed':
+        return 'The pairing code expired. Create a new code on the desktop and scan it again.';
+      case 'pair.replaced':
+        return 'A newer pairing code replaced this request. Scan the newest code.';
+      case 'auth.denied':
+      case 'auth.revoked':
+        return 'This phone is no longer authorized. Revoke any stale pairing on the desktop, then pair again.';
+      default:
+        return error.retryable ? `${error.message} You can retry.` : error.message;
+    }
+  }
   const message = error instanceof Error ? error.message : 'Something went wrong.';
   const normalized = message.toLowerCase();
   if (normalized.includes('canceled') || normalized.includes('cancelled')) {
@@ -486,11 +480,5 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: 'white', fontSize: 17, fontWeight: '700' },
   homeRoot: { flex: 1, backgroundColor: Platform.OS === 'android' ? '#fffbfe' : '#f2f2f7' }, cameraRoot: { flex: 1, justifyContent: 'flex-end', padding: 24 },
   scanGuide: { position: 'absolute', top: 80, left: 24, right: 24, alignItems: 'center', borderRadius: 18, backgroundColor: '#000b', padding: 16 }, scanText: { color: 'white', fontSize: 17, fontWeight: '600' },
-  closeButton: { alignItems: 'center', borderRadius: 18, backgroundColor: '#7c3aed', padding: 17, marginBottom: 24 }, modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0007' },
-  composer: { gap: 16, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: '#fff', padding: 24, paddingBottom: 38 }, composerTitle: { fontSize: 22, fontWeight: '700' },
-  composerInput: { minHeight: 130, borderRadius: 14, backgroundColor: '#f2eff5', padding: 14, textAlignVertical: 'top' }, composerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 28 },
-  link: { color: '#5b5362', fontSize: 17 }, linkStrong: { color: '#6d28d9', fontSize: 17, fontWeight: '700' },
-  fileName: { fontSize: 17, fontWeight: '600' }, fileMeta: { color: '#6f6875', fontSize: 14 },
-  progressTrack: { height: 8, overflow: 'hidden', borderRadius: 4, backgroundColor: '#e3dfe7', marginBottom: 8 },
-  progressFill: { height: '100%', borderRadius: 4, backgroundColor: '#7c3aed' },
+  closeButton: { alignItems: 'center', borderRadius: 18, backgroundColor: '#7c3aed', padding: 17, marginBottom: 24 },
 });

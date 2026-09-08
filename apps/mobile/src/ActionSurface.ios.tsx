@@ -1,4 +1,4 @@
-import { Button, Host, ProgressView, Spacer, Text, VStack } from '@expo/ui/swift-ui';
+import { Button, Host, ProgressView, ScrollView, Text, VStack } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   controlSize,
@@ -15,6 +15,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
   const unavailable = props.busy || props.connection !== 'online';
   return (
     <Host style={{ flex: 1 }} seedColor="#7c3aed" useViewportSizeMeasurement>
+      <ScrollView>
       <VStack alignment="leading" spacing={18} modifiers={[padding({ all: 24 }), frame({ maxWidth: 680 })]}>
         <Text modifiers={[font({ textStyle: 'largeTitle', weight: 'bold', design: 'rounded' })]}>
           {props.desktopName}
@@ -29,10 +30,10 @@ export default function ActionSurface(props: ActionSurfaceProps) {
         <Button label="Send file" systemImage="document.badge.arrow.up" onPress={props.onSendFile} modifiers={[buttonStyle('glass'), controlSize('large'), disabled(unavailable)]} />
         <Button label="Lock desktop" systemImage="lock" role="destructive" onPress={props.onLock} modifiers={[buttonStyle('bordered'), controlSize('large'), disabled(unavailable)]} />
         <Text modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' })]}>{props.message}</Text>
-        <Spacer />
         <Button label="Check connection" systemImage="arrow.clockwise" onPress={props.onRefresh} modifiers={[buttonStyle('borderless'), disabled(props.busy)]} />
         <Button label="Settings" systemImage="gearshape" onPress={props.onSettings} modifiers={[buttonStyle('borderless'), disabled(props.busy)]} />
       </VStack>
+      </ScrollView>
     </Host>
   );
 }

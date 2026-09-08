@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { File } from 'expo-file-system';
 
@@ -7,6 +8,19 @@ import type { PairingCode, PairedDesktop } from './model';
 
 type Status = { desktopName: string; desktopId: string; serverTime: string };
 type Operation = { completed: boolean; message: string; operationId: string };
+type ErrorEnvelope = { error?: { code?: string; message?: string; retryable?: boolean } };
+
+export class OmarchyClientError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly retryable: boolean,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'OmarchyClientError';
+  }
+}
 
 type DesktopEndpoint = Omit<PairingCode, 'secret'>;
 
@@ -34,9 +48,14 @@ async function request<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     timeoutMs: path === '/v1/pair/request' ? 300_000 : 15_000,
   });
-  const parsed = response.body ? JSON.parse(response.body) : {};
+  const parsed = response.body ? JSON.parse(response.body) as ErrorEnvelope : {};
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(parsed?.error?.message ?? `Desktop returned ${response.status}.`);
+    throw new OmarchyClientError(
+      parsed.error?.message ?? `Desktop returned ${response.status}.`,
+      parsed.error?.code ?? 'desktop.unknown',
+      parsed.error?.retryable ?? false,
+      response.status,
+    );
   }
   return parsed as T;
 }
@@ -57,7 +76,7 @@ export async function pairDesktop(code: PairingCode, deviceId: string): Promise<
       deviceId,
       deviceName: Platform.OS === 'ios' ? 'iPhone' : 'Android phone',
       platform: Platform.OS,
-      appVersion: '1.0.0',
+      appVersion: Constants.expoConfig?.version ?? '0.1.0',
     },
   );
   if (result.protocolVersion !== 1 || result.desktopId !== code.desktopId) {
@@ -103,17 +122,21 @@ export async function rediscoverDesktop(desktop: PairedDesktop): Promise<PairedD
 export const getStatus = (desktop: PairedDesktop) =>
   request<Status>(desktop, '/v1/status', 'GET', desktop.clientToken);
 
-export const sendClipboard = (desktop: PairedDesktop, text: string) =>
-  request<Operation>(desktop, '/v1/clipboard', 'POST', desktop.clientToken, { text });
+export const sendClipboard = (desktop: PairedDesktop, text: string) => {
+  assertTextLimit(text, 'Clipboard');
+  return request<Operation>(desktop, '/v1/clipboard', 'POST', desktop.clientToken, { text });
+};
 
 export const getClipboard = (desktop: PairedDesktop) =>
   request<{ text: string }>(desktop, '/v1/clipboard', 'GET', desktop.clientToken);
 
-export const sendText = (desktop: PairedDesktop, text: string) =>
-  request<Operation>(desktop, '/v1/inbox/text', 'POST', desktop.clientToken, {
+export const sendText = (desktop: PairedDesktop, text: string) => {
+  assertTextLimit(text, 'Shared text');
+  return request<Operation>(desktop, '/v1/inbox/text', 'POST', desktop.clientToken, {
     text,
     contentType: /^https?:\/\//i.test(text.trim()) ? 'url' : 'text',
   });
+};
 
 export const lockDesktop = (desktop: PairedDesktop) =>
   request<Operation>(desktop, '/v1/actions/lock', 'POST', desktop.clientToken, {
@@ -152,9 +175,20 @@ export async function sendFile(
       'X-Omarchy-Sha256': sha256,
     },
   }, (progress) => transfer?.onProgress?.(progress.sentBytes, progress.totalBytes), transfer?.signal);
-  const parsed = response.body ? JSON.parse(response.body) : {};
+  const parsed = response.body ? JSON.parse(response.body) as ErrorEnvelope : {};
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(parsed?.error?.message ?? `Desktop returned ${response.status}.`);
+    throw new OmarchyClientError(
+      parsed.error?.message ?? `Desktop returned ${response.status}.`,
+      parsed.error?.code ?? 'desktop.unknown',
+      parsed.error?.retryable ?? false,
+      response.status,
+    );
   }
   return parsed as Operation;
+}
+
+function assertTextLimit(value: string, label: string): void {
+  if (new TextEncoder().encode(value).byteLength > 64 * 1024) {
+    throw new Error(`${label} exceeds the 64 KiB limit.`);
+  }
 }

@@ -24,6 +24,24 @@ export type PairingSurfaceProps = {
   onScan: () => void;
 };
 
+export type FileConfirmationSurfaceProps = {
+  title: string;
+  fileName: string;
+  fileMeta: string;
+  progress: number;
+  progressLabel: string;
+  transferring: boolean;
+  onCancel: () => void;
+  onSend: () => void;
+};
+
+export type TextComposerSurfaceProps = {
+  value: string;
+  onValueChange: (value: string) => void;
+  onCancel: () => void;
+  onSend: () => void;
+};
+
 export type ActionSurfaceProps = {
   desktopName: string;
   connection: ConnectionState;

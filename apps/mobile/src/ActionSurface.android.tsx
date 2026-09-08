@@ -1,4 +1,4 @@
-import { Button, Card, CircularProgressIndicator, Column, Host, OutlinedButton, Text, TextButton } from '@expo/ui/jetpack-compose';
+import { Button, Card, CircularProgressIndicator, Column, Host, LazyColumn, OutlinedButton, Text, TextButton } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, paddingAll } from '@expo/ui/jetpack-compose/modifiers';
 
 import type { ActionSurfaceProps } from './model';
@@ -8,7 +8,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
   const wide = [fillMaxWidth()];
   return (
     <Host style={{ flex: 1 }} seedColor="#7c3aed" useViewportSizeMeasurement>
-      <Column modifiers={[paddingAll(24)]} verticalArrangement={{ spacedBy: 16 }} horizontalAlignment="start">
+      <LazyColumn contentPadding={{ start: 24, top: 24, end: 24, bottom: 24 }} verticalArrangement={{ spacedBy: 16 }} horizontalAlignment="start">
         <Text style={{ typography: 'headlineLarge', fontWeight: 'bold' }}>{props.desktopName}</Text>
         <Text color="#756f7a">{props.connection === 'online' ? 'Online on your local network' : props.connection === 'checking' ? 'Checking connection…' : 'Desktop unavailable'}</Text>
         <Card modifiers={wide}>
@@ -24,7 +24,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
         <Text style={{ typography: 'bodyMedium' }}>{props.message}</Text>
         <TextButton enabled={!props.busy} onClick={props.onRefresh}><Text>Check connection</Text></TextButton>
         <TextButton enabled={!props.busy} onClick={props.onSettings}><Text>Settings</Text></TextButton>
-      </Column>
+      </LazyColumn>
     </Host>
   );
 }
