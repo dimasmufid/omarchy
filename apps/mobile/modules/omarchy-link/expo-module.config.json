@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OmarchyLinkModule"]
+  },
+  "android": {
+    "modules": ["org.omarchy.link.OmarchyLinkModule"]
+  }
+}

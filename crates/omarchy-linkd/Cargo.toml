@@ -1,0 +1,54 @@
+[package]
+name = "omarchy-linkd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "omarchy_linkd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omarchy-linkd"
+path = "src/bin/omarchy-linkd.rs"
+
+[[bin]]
+name = "omarchy-mobile"
+path = "src/bin/omarchy-mobile.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["json", "macros"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+futures-util = "0.3"
+http-body-util = "0.1"
+local-ip-address = "0.6"
+mdns-sd = "0.17"
+omarchy-link-protocol = { path = "../omarchy-link-protocol" }
+qrcode = { version = "0.14", default-features = false }
+rand = "0.9"
+rcgen = { version = "0.14", features = ["crypto", "pem", "ring"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["limit", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+
