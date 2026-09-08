@@ -20,6 +20,12 @@ Tailscale, and background connection work remain P1 or P2.
 
 ## 2. Proposed repository structure
 
+The Phase 1 implementation intentionally uses a smaller subset of this target
+layout. The current runnable code lives in `apps/mobile`,
+`crates/omarchy-linkd`, `crates/omarchy-link-protocol`, and `packaging`. The
+remaining directories below describe post-MVP expansion and must not be created
+as empty architecture placeholders.
+
 ```text
 apps/
 ├── mobile/                         # Expo React Native application
