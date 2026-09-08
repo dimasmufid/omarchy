@@ -10,6 +10,8 @@ class OmarchyLinkModule extends NativeModule<{}> {
     throw new Error('Pinned LAN uploads require an Android or iOS development build.');
   }
 
+  async cancelUploadAsync(): Promise<void> {}
+
   async discoverAsync(): Promise<string> {
     return '[]';
   }

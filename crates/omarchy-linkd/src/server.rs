@@ -280,9 +280,16 @@ async fn inbox_file(
     let mut received = 0_u64;
     let mut digest = Sha256::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| {
-            AppError::bad_request("transfer.interrupted", "File upload was interrupted")
-        })?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                cleanup(&temporary).await;
+                return Err(AppError::bad_request(
+                    "transfer.interrupted",
+                    "File upload was interrupted",
+                ));
+            }
+        };
         received = received.saturating_add(chunk.len() as u64);
         if received > MAX_FILE_BYTES || received > declared_size {
             cleanup(&temporary).await;
@@ -316,24 +323,25 @@ async fn inbox_file(
             "File integrity check failed",
         ));
     }
-    file.sync_all().await.map_err(|_| {
-        AppError::service(
+    if file.sync_all().await.is_err() {
+        drop(file);
+        cleanup(&temporary).await;
+        return Err(AppError::service(
             "transfer.disk_write_failed",
             "The file could not be finalized",
             false,
-        )
-    })?;
+        ));
+    }
     drop(file);
     let destination = unique_destination(&state.paths.inbox_dir, &filename, &operation_id);
-    tokio::fs::rename(&temporary, &destination)
-        .await
-        .map_err(|_| {
-            AppError::service(
-                "transfer.finalize_failed",
-                "The file could not be finalized",
-                false,
-            )
-        })?;
+    if tokio::fs::rename(&temporary, &destination).await.is_err() {
+        cleanup(&temporary).await;
+        return Err(AppError::service(
+            "transfer.finalize_failed",
+            "The file could not be finalized",
+            false,
+        ));
+    }
     notify_received("File received in Omarchy Inbox").await;
     Ok(Json(OperationResponse {
         operation_id,
@@ -559,6 +567,7 @@ impl IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{PeerRecord, hash_token};
 
     #[test]
     fn duplicate_filename_stays_inside_inbox() {
@@ -573,6 +582,46 @@ mod tests {
         assert_eq!(
             destination.file_name().and_then(|value| value.to_str()),
             Some("report-12345678.pdf")
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupted_upload_removes_partial_file() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let paths = AppPaths::under(temporary.path());
+        let state = AppState::load(paths.clone(), "test-fingerprint".into()).expect("state");
+        state.persisted.write().await.peer = Some(PeerRecord {
+            device_id: "phone_test".into(),
+            device_name: "Test phone".into(),
+            token_hash: hash_token("test-token"),
+            paired_at: "2026-09-08T00:00:00Z".into(),
+            permissions: vec![Permission::InboxWrite],
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            "Bearer test-token".parse().expect("header"),
+        );
+        headers.insert("content-length", "6".parse().expect("header"));
+        headers.insert("x-omarchy-filename", "report.pdf".parse().expect("header"));
+        headers.insert(
+            "x-omarchy-sha256",
+            "0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .expect("header"),
+        );
+        let body = Body::from_stream(futures_util::stream::iter([
+            Ok::<_, io::Error>(axum::body::Bytes::from_static(b"abc")),
+            Err(io::Error::other("connection closed")),
+        ]));
+
+        let result = inbox_file(State(state), headers, body).await;
+
+        let error = result.expect_err("upload should fail");
+        assert_eq!(error.body.error.code, "transfer.interrupted");
+        assert_eq!(
+            std::fs::read_dir(paths.inbox_dir).expect("inbox").count(),
+            0
         );
     }
 }

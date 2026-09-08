@@ -4,13 +4,29 @@ import Foundation
 final class PinnedSessionDelegate: NSObject, URLSessionTaskDelegate {
   private let expectedFingerprint: Data
   private let expectedHost: String
+  private let uploadProgress: ((Int64, Int64) -> Void)?
 
-  init(fingerprint: String, expectedHost: String) throws {
+  init(
+    fingerprint: String,
+    expectedHost: String,
+    uploadProgress: ((Int64, Int64) -> Void)? = nil
+  ) throws {
     guard let decoded = Self.decodeBase64Url(fingerprint), decoded.count == 32 else {
       throw OmarchyLinkError.invalidFingerprint
     }
     expectedFingerprint = decoded
     self.expectedHost = expectedHost
+    self.uploadProgress = uploadProgress
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didSendBodyData bytesSent: Int64,
+    totalBytesSent: Int64,
+    totalBytesExpectedToSend: Int64
+  ) {
+    uploadProgress?(totalBytesSent, totalBytesExpectedToSend)
   }
 
   func urlSession(

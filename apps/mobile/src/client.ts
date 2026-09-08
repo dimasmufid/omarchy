@@ -88,17 +88,26 @@ export const lockDesktop = (desktop: PairedDesktop) =>
 export async function sendFile(
   desktop: PairedDesktop,
   asset: { uri: string; name: string; size?: number; mimeType?: string },
+  transfer?: {
+    onProgress?: (sentBytes: number, totalBytes: number) => void;
+    signal?: AbortSignal;
+  },
 ): Promise<Operation> {
+  if (transfer?.signal?.aborted) throw new Error('File transfer canceled.');
   const file = new File(asset.uri);
   const bytes = new Uint8Array(await file.arrayBuffer());
+  if (transfer?.signal?.aborted) throw new Error('File transfer canceled.');
   if (bytes.byteLength > 25 * 1024 * 1024) throw new Error('Choose a file up to 25 MiB.');
   const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+  if (transfer?.signal?.aborted) throw new Error('File transfer canceled.');
   const sha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const uploadId = Crypto.randomUUID();
   const response = await pinnedUpload({
     url: `${baseUrl(desktop)}/v1/inbox/file`,
     method: 'POST',
     fingerprint: desktop.fingerprint,
     fileUri: asset.uri,
+    uploadId,
     timeoutMs: 300_000,
     headers: {
       Authorization: `Bearer ${desktop.clientToken}`,
@@ -107,7 +116,7 @@ export async function sendFile(
       'X-Omarchy-Filename': asset.name,
       'X-Omarchy-Sha256': sha256,
     },
-  });
+  }, (progress) => transfer?.onProgress?.(progress.sentBytes, progress.totalBytes), transfer?.signal);
   const parsed = response.body ? JSON.parse(response.body) : {};
   if (response.status < 200 || response.status >= 300) {
     throw new Error(parsed?.error?.message ?? `Desktop returned ${response.status}.`);

@@ -9,6 +9,13 @@ export type PinnedRequest = {
 
 export type PinnedUpload = Omit<PinnedRequest, "body"> & {
   fileUri: string;
+  uploadId: string;
+};
+
+export type UploadProgressEvent = {
+  uploadId: string;
+  sentBytes: number;
+  totalBytes: number;
 };
 
 export type NativeHttpResponse = {

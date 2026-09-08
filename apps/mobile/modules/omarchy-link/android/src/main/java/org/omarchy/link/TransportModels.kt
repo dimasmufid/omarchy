@@ -9,7 +9,8 @@ data class RequestOptions(
   val headers: Map<String, String>,
   val body: String?,
   val timeoutMs: Int,
-  val fileUri: String?
+  val fileUri: String?,
+  val uploadId: String?
 ) {
   companion object {
     fun fromJson(value: String): RequestOptions {
@@ -25,7 +26,8 @@ data class RequestOptions(
         headers = headers,
         body = json.optString("body").takeIf { json.has("body") && !json.isNull("body") },
         timeoutMs = json.optInt("timeoutMs", 15_000).coerceIn(1_000, 300_000),
-        fileUri = json.optString("fileUri").takeIf { json.has("fileUri") && !json.isNull("fileUri") }
+        fileUri = json.optString("fileUri").takeIf { json.has("fileUri") && !json.isNull("fileUri") },
+        uploadId = json.optString("uploadId").takeIf { json.has("uploadId") && !json.isNull("uploadId") }
       )
     }
   }

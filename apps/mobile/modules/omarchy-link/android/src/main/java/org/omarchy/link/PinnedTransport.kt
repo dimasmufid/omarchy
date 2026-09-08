@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.net.URL
 import java.security.SecureRandom
 import javax.net.ssl.HttpsURLConnection
@@ -11,11 +12,19 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 
 object PinnedTransport {
-  fun execute(context: Context, optionsJson: String, upload: Boolean): String {
+  fun execute(
+    context: Context,
+    optionsJson: String,
+    upload: Boolean,
+    onConnection: (HttpsURLConnection) -> Unit = {},
+    onProgress: (Long, Long) -> Unit = { _, _ -> },
+    isCancelled: () -> Boolean = { false }
+  ): String {
     val options = RequestOptions.fromJson(optionsJson)
     val url = URL(options.url)
     require(url.protocol == "https") { "Only HTTPS Omarchy endpoints are supported" }
     val connection = url.openConnection() as HttpsURLConnection
+    onConnection(connection)
     val tls = SSLContext.getInstance("TLSv1.3")
     tls.init(
       null,
@@ -25,7 +34,7 @@ object PinnedTransport {
     connection.sslSocketFactory = tls.socketFactory
     connection.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
     configure(connection, options, upload)
-    return performRequest(context, connection, options, upload)
+    return performRequest(context, connection, options, upload, onProgress, isCancelled)
   }
 
   private fun configure(connection: HttpsURLConnection, options: RequestOptions, upload: Boolean) {
@@ -41,11 +50,13 @@ object PinnedTransport {
     context: Context,
     connection: HttpsURLConnection,
     options: RequestOptions,
-    upload: Boolean
+    upload: Boolean,
+    onProgress: (Long, Long) -> Unit,
+    isCancelled: () -> Boolean
   ): String {
     try {
       if (upload) {
-        writeUpload(context, connection, options)
+        writeUpload(context, connection, options, onProgress, isCancelled)
       } else if (options.body != null) {
         val bytes = options.body.toByteArray(Charsets.UTF_8)
         connection.doOutput = true
@@ -64,7 +75,9 @@ object PinnedTransport {
   private fun writeUpload(
     context: Context,
     connection: HttpsURLConnection,
-    options: RequestOptions
+    options: RequestOptions,
+    onProgress: (Long, Long) -> Unit,
+    isCancelled: () -> Boolean
   ) {
     val uri = Uri.parse(requireNotNull(options.fileUri) { "An upload requires fileUri" })
     val length = options.headers.entries
@@ -80,7 +93,16 @@ object PinnedTransport {
     connection.setFixedLengthStreamingMode(length)
     input.use { source ->
       connection.outputStream.use { target ->
-        val copied = source.copyTo(target, BUFFER_BYTES)
+        val buffer = ByteArray(BUFFER_BYTES)
+        var copied = 0L
+        while (true) {
+          if (isCancelled()) throw InterruptedIOException("File transfer canceled")
+          val count = source.read(buffer)
+          if (count < 0) break
+          target.write(buffer, 0, count)
+          copied += count
+          onProgress(copied, length)
+        }
         require(copied == length) { "The selected file changed before upload" }
       }
     }

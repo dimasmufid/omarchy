@@ -2,7 +2,22 @@ import ExpoModulesCore
 import Foundation
 
 enum PinnedTransport {
-  static func execute(_ optionsJson: String, upload: Bool, promise: Promise) {
+  private static let uploadsLock = NSLock()
+  private nonisolated(unsafe) static var uploads: [String: URLSessionUploadTask] = [:]
+
+  static func cancelUpload(_ uploadId: String) {
+    uploadsLock.lock()
+    let task = uploads[uploadId]
+    uploadsLock.unlock()
+    task?.cancel()
+  }
+
+  static func execute(
+    _ optionsJson: String,
+    upload: Bool,
+    promise: Promise,
+    onUploadProgress: ((String, Int64, Int64) -> Void)? = nil
+  ) {
     do {
       let options = try JSONDecoder().decode(RequestOptions.self, from: Data(optionsJson.utf8))
       guard let url = URL(string: options.url), url.scheme == "https", let host = url.host else {
@@ -10,7 +25,12 @@ enum PinnedTransport {
       }
       let delegate = try PinnedSessionDelegate(
         fingerprint: options.fingerprint,
-        expectedHost: host
+        expectedHost: host,
+        uploadProgress: { sent, total in
+          if let uploadId = options.uploadId {
+            onUploadProgress?(uploadId, sent, total)
+          }
+        }
       )
       let configuration = URLSessionConfiguration.ephemeral
       configuration.timeoutIntervalForRequest = (options.timeoutMs ?? 15_000) / 1_000
@@ -27,6 +47,11 @@ enum PinnedTransport {
       }
 
       let completion: (Data?, URLResponse?, Error?) -> Void = { data, response, error in
+        if let uploadId = options.uploadId {
+          uploadsLock.lock()
+          uploads.removeValue(forKey: uploadId)
+          uploadsLock.unlock()
+        }
         defer { session.finishTasksAndInvalidate() }
         if let error {
           promise.reject(error)
@@ -64,7 +89,14 @@ enum PinnedTransport {
         else {
           throw OmarchyLinkError.unsupportedFileUrl
         }
-        session.uploadTask(with: request, fromFile: fileUrl, completionHandler: completion).resume()
+        guard let uploadId = options.uploadId, !uploadId.isEmpty else {
+          throw OmarchyLinkError.invalidUploadId
+        }
+        let task = session.uploadTask(with: request, fromFile: fileUrl, completionHandler: completion)
+        uploadsLock.lock()
+        uploads[uploadId] = task
+        uploadsLock.unlock()
+        task.resume()
       } else {
         session.dataTask(with: request, completionHandler: completion).resume()
       }

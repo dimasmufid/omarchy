@@ -35,6 +35,8 @@ export default function App() {
   const [composerFromShare, setComposerFromShare] = useState(false);
   const [sharedText, setSharedText] = useState('');
   const [incomingFile, setIncomingFile] = useState<PendingFile | null>(null);
+  const [transferProgress, setTransferProgress] = useState<{ sent: number; total: number } | null>(null);
+  const transferController = useRef<AbortController | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   useEffect(() => {
@@ -198,6 +200,26 @@ export default function App() {
     }
   };
 
+  const startFileTransfer = (file: PendingFile) => {
+    const controller = new AbortController();
+    transferController.current = controller;
+    setTransferProgress({ sent: 0, total: file.size ?? 0 });
+    void run(() => sendFile(desktop!, file, {
+      signal: controller.signal,
+      onProgress: (sent, total) => setTransferProgress({ sent, total }),
+    })).then((sent) => {
+      if (!sent) return;
+      if (file.fromShare) {
+        incomingShare.clearSharedPayloads();
+        handledShare.current = null;
+      }
+      setIncomingFile(null);
+    }).finally(() => {
+      transferController.current = null;
+      setTransferProgress(null);
+    });
+  };
+
   if (desktop === undefined) {
     return <SafeAreaView style={styles.center}><Text style={styles.title}>Omarchy</Text><Text>Opening your space…</Text></SafeAreaView>;
   }
@@ -294,30 +316,47 @@ export default function App() {
         </KeyboardAvoidingView>
       </Modal>
       <Modal visible={incomingFile !== null} transparent animationType="fade" onRequestClose={() => {
-        dismissFile();
+        if (transferController.current) transferController.current.abort();
+        else dismissFile();
       }}>
         <View style={styles.modalBackdrop}>
           <View style={styles.composer}>
             <Text style={styles.composerTitle}>{incomingFile?.fromShare ? 'Send shared file?' : 'Send this file?'}</Text>
             <Text style={styles.fileName}>{incomingFile?.name}</Text>
             <Text style={styles.fileMeta}>{incomingFile?.size === undefined ? 'Size will be checked before sending' : formatBytes(incomingFile.size)} · to {desktop.desktopName}</Text>
+            {transferProgress ? (
+              <View accessibilityRole="progressbar" accessibilityValue={{
+                min: 0,
+                max: transferProgress.total || 1,
+                now: transferProgress.sent,
+              }}>
+                <View style={styles.progressTrack}>
+                  <View style={[
+                    styles.progressFill,
+                    { width: `${transferPercent(transferProgress.sent, transferProgress.total)}%` },
+                  ]} />
+                </View>
+                <Text style={styles.fileMeta}>
+                  {transferProgress.total > 0
+                    ? `${formatBytes(transferProgress.sent)} of ${formatBytes(transferProgress.total)}`
+                    : 'Preparing secure transfer…'}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.composerActions}>
               <Pressable onPress={() => {
-                dismissFile();
-              }}><Text style={styles.link}>Cancel</Text></Pressable>
-              <Pressable onPress={() => {
-                const file = incomingFile;
-                if (!file) return;
-                setIncomingFile(null);
-                void run(() => sendFile(desktop, file)).then((sent) => {
-                  if (sent && file.fromShare) {
-                    incomingShare.clearSharedPayloads();
-                    handledShare.current = null;
-                  } else if (!sent) {
-                    setIncomingFile(file);
-                  }
-                });
-              }}><Text style={styles.linkStrong}>Send</Text></Pressable>
+                if (transferController.current) {
+                  transferController.current.abort();
+                  setMessage('Canceling file transfer…');
+                } else {
+                  dismissFile();
+                }
+              }}><Text style={styles.link}>{transferProgress ? 'Cancel transfer' : 'Cancel'}</Text></Pressable>
+              {!transferProgress ? (
+                <Pressable onPress={() => {
+                  if (incomingFile) startFileTransfer(incomingFile);
+                }}><Text style={styles.linkStrong}>Send</Text></Pressable>
+              ) : null}
             </View>
           </View>
         </View>
@@ -340,6 +379,11 @@ function formatBytes(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MiB` : `${Math.max(1, Math.ceil(bytes / 1024))} KiB`;
 }
 
+function transferPercent(sent: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.max(0, (sent / total) * 100));
+}
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   pairRoot: { flex: 1, backgroundColor: '#0d0b12' }, pairContent: { flex: 1, justifyContent: 'center', gap: 18, padding: 28 },
@@ -355,4 +399,6 @@ const styles = StyleSheet.create({
   composerInput: { minHeight: 130, borderRadius: 14, backgroundColor: '#f2eff5', padding: 14, textAlignVertical: 'top' }, composerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 28 },
   link: { color: '#5b5362', fontSize: 17 }, linkStrong: { color: '#6d28d9', fontSize: 17, fontWeight: '700' },
   fileName: { fontSize: 17, fontWeight: '600' }, fileMeta: { color: '#6f6875', fontSize: 14 },
+  progressTrack: { height: 8, overflow: 'hidden', borderRadius: 4, backgroundColor: '#e3dfe7', marginBottom: 8 },
+  progressFill: { height: '100%', borderRadius: 4, backgroundColor: '#7c3aed' },
 });
