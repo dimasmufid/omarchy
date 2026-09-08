@@ -161,7 +161,9 @@ It still minimizes secrets, validates boundaries, and supports revocation.
 - The desktop approval names the phone, platform, requested permissions, and
   route. Device names are escaped plain text.
 - Mobile shows the desktop name and a short identity verification value.
-- Pairing success is committed transactionally with permission grants.
+- Desktop approval creates only memory-resident pending state. Pairing success
+  and permission grants are committed transactionally after the phone proves it
+  received the approved credential.
 - Partial pairing state is removed on timeout, rejection, or crash recovery.
 
 ## 8. Authorization

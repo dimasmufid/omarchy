@@ -9,7 +9,7 @@ import { File } from 'expo-file-system';
 
 import ActionSurface from './src/ActionSurface';
 import SettingsSurface from './src/SettingsSurface';
-import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText } from './src/client';
+import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText, updateDesktopEndpoint } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
 import { parsePairingCode } from './src/model';
 import { clearPairing, loadPairing, savePairing } from './src/storage';
@@ -33,6 +33,8 @@ export default function App() {
   const [message, setMessage] = useState('Ready');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endpointMessage, setEndpointMessage] = useState('');
+  const [endpointSaving, setEndpointSaving] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState<string>();
   const [manualCode, setManualCode] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
@@ -297,8 +299,31 @@ export default function App() {
           <SettingsSurface
             desktopName={desktop.desktopName}
             desktopId={shortDesktopId(desktop.desktopId)}
+            endpointHost={desktop.host}
+            endpointPort={desktop.port}
+            endpointMessage={endpointMessage}
+            endpointSaving={endpointSaving}
             connection={connection}
             lastSeen={formatLastSeen(lastSeenAt)}
+            onSaveEndpoint={(host, port) => {
+              if (endpointSaving) return;
+              const parsed = parseManualEndpoint(host, port);
+              if (!parsed.ok) {
+                setEndpointMessage(parsed.message);
+                return;
+              }
+              setEndpointSaving(true);
+              setEndpointMessage('Verifying the pinned desktop…');
+              void updateDesktopEndpoint(desktop, parsed.host, parsed.port).then(async (updated) => {
+                await savePairing(updated);
+                setDesktop(updated);
+                setConnection('online');
+                setEndpointMessage('Address verified and saved.');
+                setMessage('Connected using the manually entered address.');
+              }).catch((error) => {
+                setEndpointMessage(errorMessage(error));
+              }).finally(() => setEndpointSaving(false));
+            }}
             onOpenSystemSettings={() => void Linking.openSettings()}
             onClose={() => setSettingsOpen(false)}
             onForget={() => Alert.alert('Forget this desktop?', 'You will need to pair again. Revoke this phone on the desktop too.', [
@@ -417,6 +442,20 @@ function errorMessage(error: unknown): string {
     return 'The desktop is unreachable. Check the LAN connection and that omarchy-linkd is running.';
   }
   return message;
+}
+
+function parseManualEndpoint(hostValue: string, portValue: string):
+  | { ok: true; host: string; port: number }
+  | { ok: false; message: string } {
+  const host = hostValue.trim().replace(/^\[|\]$/g, '');
+  const port = Number(portValue.trim());
+  if (!host || /\s|\/|:\/\//.test(host)) {
+    return { ok: false, message: 'Enter a hostname or IP address without https:// or a path.' };
+  }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, message: 'Enter a port from 1 to 65535.' };
+  }
+  return { ok: true, host, port };
 }
 
 function filenameFromUri(uri: string, fallback: string): string {

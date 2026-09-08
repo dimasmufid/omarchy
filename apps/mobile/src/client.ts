@@ -42,7 +42,12 @@ async function request<T>(
 }
 
 export async function pairDesktop(code: PairingCode, deviceId: string): Promise<PairedDesktop> {
-  const result = await request<{ clientToken: string; desktopName: string }>(
+  const result = await request<{
+    clientToken: string;
+    desktopId: string;
+    desktopName: string;
+    protocolVersion: number;
+  }>(
     code,
     '/v1/pair/request',
     'POST',
@@ -55,8 +60,34 @@ export async function pairDesktop(code: PairingCode, deviceId: string): Promise<
       appVersion: '1.0.0',
     },
   );
+  if (result.protocolVersion !== 1 || result.desktopId !== code.desktopId) {
+    throw new Error('Desktop identity mismatch during pairing.');
+  }
   const { secret: _usedSecret, ...identity } = code;
-  return { ...identity, desktopName: result.desktopName, clientToken: result.clientToken, deviceId };
+  const paired = { ...identity, desktopName: result.desktopName, clientToken: result.clientToken, deviceId };
+  try {
+    await request<Operation>(paired, '/v1/pair/complete', 'POST', result.clientToken, { deviceId });
+  } catch (completionError) {
+    try {
+      await getStatus(paired);
+    } catch {
+      throw completionError;
+    }
+  }
+  return paired;
+}
+
+export async function updateDesktopEndpoint(
+  desktop: PairedDesktop,
+  host: string,
+  port: number,
+): Promise<PairedDesktop> {
+  const candidate = { ...desktop, host, port };
+  const status = await getStatus(candidate);
+  if (status.desktopId !== desktop.desktopId) {
+    throw new Error('Desktop identity mismatch at the entered address.');
+  }
+  return { ...candidate, desktopName: status.desktopName };
 }
 
 export async function rediscoverDesktop(desktop: PairedDesktop): Promise<PairedDesktop | null> {

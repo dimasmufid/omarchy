@@ -137,7 +137,32 @@ async fn pair(paths: &AppPaths, port: u16, host: Option<IpAddr>, uri_only: bool)
     .map_err(io::Error::other)??;
     if accepted {
         request(paths, AdminCommand::PairApprove).await?;
-        println!("Paired with {name}.");
+        println!("Approved {name}. Waiting for the phone to finish pairing…");
+        let expected_device_id = pending
+            .get("deviceId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| io::Error::other("daemon returned no phone identity"))?;
+        let completion_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let status = request(paths, AdminCommand::Status).await?;
+            let completed = status
+                .get("pairedDevice")
+                .filter(|value| !value.is_null())
+                .and_then(|peer| peer.get("deviceId"))
+                .and_then(Value::as_str)
+                .is_some_and(|device_id| device_id == expected_device_id);
+            if completed {
+                println!("Paired with {name}.");
+                break;
+            }
+            if tokio::time::Instant::now() >= completion_deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "the phone did not finish pairing; create a new pairing code and retry",
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
     } else {
         request(paths, AdminCommand::PairReject).await?;
         println!("Pairing rejected.");

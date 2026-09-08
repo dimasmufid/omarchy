@@ -20,6 +20,10 @@ pub struct PairRequest {
 
 impl PairRequest {
     /// Rejects ambiguous or oversized identity metadata before it reaches UI or storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] when an identity field, version, or secret is malformed.
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_identifier(&self.device_id, 96, "deviceId")?;
         validate_display_name(&self.device_name)?;
@@ -49,6 +53,21 @@ pub struct PairApproved {
     pub client_token: String,
     pub permissions: Vec<Permission>,
     pub limits: Limits,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairCompleteRequest {
+    pub device_id: String,
+}
+
+impl PairCompleteRequest {
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] when the device identifier is malformed.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_identifier(&self.device_id, 96, "deviceId")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -108,8 +127,11 @@ pub struct ClipboardWriteRequest {
 }
 
 impl ClipboardWriteRequest {
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] when the clipboard exceeds the configured byte limit.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        if self.text.as_bytes().len() > MAX_CLIPBOARD_BYTES {
+        if self.text.len() > MAX_CLIPBOARD_BYTES {
             return Err(ValidationError::TooLarge {
                 field: "text",
                 max_bytes: MAX_CLIPBOARD_BYTES,
@@ -132,11 +154,14 @@ pub struct InboxTextRequest {
 }
 
 impl InboxTextRequest {
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] when the content is empty or exceeds the byte limit.
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.text.is_empty() {
             return Err(ValidationError::InvalidField("text"));
         }
-        if self.text.as_bytes().len() > MAX_CLIPBOARD_BYTES {
+        if self.text.len() > MAX_CLIPBOARD_BYTES {
             return Err(ValidationError::TooLarge {
                 field: "text",
                 max_bytes: MAX_CLIPBOARD_BYTES,
@@ -168,6 +193,9 @@ pub struct LockRequest {
 }
 
 impl LockRequest {
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] when the idempotency key is malformed.
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_identifier(&self.idempotency_key, 96, "idempotencyKey")
     }
@@ -227,7 +255,7 @@ fn validate_identifier(
 
 fn validate_display_name(value: &str) -> Result<(), ValidationError> {
     let value = value.trim();
-    if value.is_empty() || value.as_bytes().len() > 63 || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > 63 || value.chars().any(char::is_control) {
         return Err(ValidationError::InvalidField("deviceName"));
     }
     Ok(())

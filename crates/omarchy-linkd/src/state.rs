@@ -59,6 +59,7 @@ pub enum PairDecision {
 
 #[derive(Debug)]
 pub struct PairWindow {
+    pub id: Uuid,
     pub secret: String,
     pub expires_at: u64,
     pub failed_attempts: u8,
@@ -119,7 +120,12 @@ impl AppState {
         let secret = URL_SAFE_NO_PAD.encode(secret);
         let expires_at = now_unix() + PAIRING_WINDOW_SECONDS;
         let notify = Arc::new(Notify::new());
-        *self.pairing.lock().await = Some(PairWindow {
+        let mut pairing = self.pairing.lock().await;
+        if let Some(previous) = pairing.as_ref() {
+            previous.notify.notify_waiters();
+        }
+        *pairing = Some(PairWindow {
+            id: Uuid::new_v4(),
             secret: secret.clone(),
             expires_at,
             failed_attempts: 0,
@@ -172,14 +178,7 @@ impl AppState {
         rand::rng().fill_bytes(&mut raw_token);
         let raw_token = URL_SAFE_NO_PAD.encode(raw_token);
         let permissions = Permission::all_phase_one().to_vec();
-        let mut persisted = self.persisted.write().await;
-        persisted.peer = Some(PeerRecord {
-            device_id: request.device_id,
-            device_name: request.device_name.clone(),
-            token_hash: hash_token(&raw_token),
-            paired_at: chrono::Utc::now().to_rfc3339(),
-            permissions: permissions.clone(),
-        });
+        let persisted = self.persisted.read().await;
         let approved = PairApproved {
             protocol_version: PROTOCOL_VERSION,
             desktop_id: persisted.desktop_id.clone(),
@@ -188,10 +187,48 @@ impl AppState {
             permissions,
             limits: omarchy_link_protocol::Limits::default(),
         };
-        save_snapshot(&self.paths.state_file(), &persisted).map_err(ApprovalError::Persist)?;
         window.decision = Some(PairDecision::Approved(approved));
         window.notify.notify_waiters();
         Ok(request.device_name)
+    }
+
+    pub async fn complete_pending(
+        &self,
+        device_id: &str,
+        client_token: &str,
+    ) -> Result<String, CompletionError> {
+        let mut pairing = self.pairing.lock().await;
+        let window = pairing.as_ref().ok_or(CompletionError::NoWindow)?;
+        if window.is_expired() {
+            *pairing = None;
+            return Err(CompletionError::Expired);
+        }
+        let request = window.request.as_ref().ok_or(CompletionError::NoRequest)?;
+        let approved = match window.decision.as_ref() {
+            Some(PairDecision::Approved(approved)) => approved,
+            Some(PairDecision::Rejected) => return Err(CompletionError::Rejected),
+            None => return Err(CompletionError::NotApproved),
+        };
+        if !constant_time_string_eq(&request.device_id, device_id)
+            || !constant_time_string_eq(&approved.client_token, client_token)
+        {
+            return Err(CompletionError::InvalidCredential);
+        }
+
+        let device_name = request.device_name.clone();
+        let mut persisted = self.persisted.write().await;
+        let mut updated = persisted.clone();
+        updated.peer = Some(PeerRecord {
+            device_id: request.device_id.clone(),
+            device_name: device_name.clone(),
+            token_hash: hash_token(client_token),
+            paired_at: chrono::Utc::now().to_rfc3339(),
+            permissions: approved.permissions.clone(),
+        });
+        save_snapshot(&self.paths.state_file(), &updated).map_err(CompletionError::Persist)?;
+        *persisted = updated;
+        *pairing = None;
+        Ok(device_name)
     }
 
     pub async fn reject_pending(&self) -> Result<(), ApprovalError> {
@@ -255,7 +292,23 @@ pub enum ApprovalError {
     Expired,
     #[error("no phone is waiting for approval")]
     NoRequest,
-    #[error("could not persist approval: {0}")]
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CompletionError {
+    #[error("no pairing window is open")]
+    NoWindow,
+    #[error("the pairing window expired")]
+    Expired,
+    #[error("no phone requested pairing")]
+    NoRequest,
+    #[error("pairing was rejected")]
+    Rejected,
+    #[error("pairing has not been approved")]
+    NotApproved,
+    #[error("the pairing completion credential is invalid")]
+    InvalidCredential,
+    #[error("could not persist pairing: {0}")]
     Persist(#[source] io::Error),
 }
 
@@ -342,5 +395,46 @@ mod tests {
         );
         state.remove_lock_key("lock_test").await.expect("remove");
         assert!(state.register_lock_key("lock_test").await.expect("retry"));
+    }
+
+    #[tokio::test]
+    async fn approval_is_not_authorized_until_phone_completes_pairing() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let paths = AppPaths::under(temporary.path());
+        let state = AppState::load(paths.clone(), "fingerprint".into()).expect("state");
+        state
+            .open_pairing_window("127.0.0.1", 42_783)
+            .await
+            .expect("pairing window");
+        state.pairing.lock().await.as_mut().expect("window").request = Some(PairRequest {
+            secret: "x".repeat(43),
+            device_id: "phone_test".into(),
+            device_name: "Test phone".into(),
+            platform: omarchy_link_protocol::MobilePlatform::Android,
+            app_version: "0.1.0".into(),
+        });
+
+        state.approve_pending().await.expect("approve");
+        let token = {
+            let pairing = state.pairing.lock().await;
+            match pairing.as_ref().and_then(|window| window.decision.as_ref()) {
+                Some(PairDecision::Approved(approved)) => approved.client_token.clone(),
+                _ => panic!("approval token missing"),
+            }
+        };
+        assert!(!state.authorize_bearer(&token, Permission::Status).await);
+        assert!(matches!(
+            state.complete_pending("another_phone", &token).await,
+            Err(CompletionError::InvalidCredential)
+        ));
+        state
+            .complete_pending("phone_test", &token)
+            .await
+            .expect("complete");
+        assert!(state.authorize_bearer(&token, Permission::Status).await);
+        assert!(state.pairing.lock().await.is_none());
+
+        let reloaded = AppState::load(paths, "fingerprint".into()).expect("reload");
+        assert!(reloaded.authorize_bearer(&token, Permission::Status).await);
     }
 }

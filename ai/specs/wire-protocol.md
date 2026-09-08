@@ -122,13 +122,23 @@ Normative properties:
    platform, application version, and requested baseline permissions.
 4. Desktop verifies and consumes the token, then displays an approval request.
 5. Desktop user accepts, modifies permissions, or rejects.
-6. On acceptance, both sides establish standard mutual authentication material
-   and store the peer identity.
-7. Desktop returns device ID, granted permissions, and protocol limits.
-8. Both sides close the special pairing session and create a normal session.
+6. On acceptance, desktop creates a pending high-entropy bearer credential in
+   memory but does not yet persist or authorize the phone.
+7. Desktop returns its ID, the pending credential, granted permissions, and
+   protocol limits over the pinned TLS connection.
+8. Mobile validates the returned desktop ID, then calls
+   `POST /v1/pair/complete` with its device ID and the pending credential.
+9. Desktop atomically persists the peer and credential hash, authorizes the
+   phone, and removes the pairing window only after completion succeeds.
+10. Mobile stores the credential in device-only secure storage. If the
+    completion response is lost, it reconciles with authenticated status before
+    deciding that pairing failed.
 
 The pairing token alone MUST NOT complete pairing without desktop acceptance.
 A rejected, expired, or used token cannot be retried.
+Opening a newer pairing window wakes and rejects every request bound to the
+replaced window. Approval without completion grants no access and leaves no
+persisted peer state.
 
 ### 3.4 Re-pairing and rotation
 

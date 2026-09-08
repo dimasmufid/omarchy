@@ -32,8 +32,13 @@ export type ActionSurfaceProps = {
 export type SettingsSurfaceProps = {
   desktopName: string;
   desktopId: string;
+  endpointHost: string;
+  endpointPort: number;
+  endpointMessage: string;
+  endpointSaving: boolean;
   connection: ConnectionState;
   lastSeen: string;
+  onSaveEndpoint: (host: string, port: string) => void;
   onOpenSystemSettings: () => void;
   onClose: () => void;
   onForget: () => void;

@@ -413,6 +413,8 @@ Desktop:
 - Package daemon, user service, shell plugin, and built-in providers with signed
   provenance.
 - Installation does not edit packaged Omarchy files in place.
+- Reinstalling or upgrading the desktop package restarts the user daemon so the
+  running protocol version always matches the installed binaries.
 - User capabilities live in user configuration and survive upgrades.
 - Database migrations are forward-tested and backed up before destructive shape
   changes.

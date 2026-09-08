@@ -11,6 +11,7 @@ export default function SettingsSurface(props: SettingsSurfaceProps) {
       <Text>Identity {props.desktopId}</Text>
       <Text>No account or cloud relay. Core features stay on your local network.</Text>
       <Button title="Open system Settings" onPress={props.onOpenSystemSettings} />
+      <Text>Direct address: {props.endpointHost}:{props.endpointPort}</Text>
       <Button title="Forget this desktop" color="#ba1a1a" onPress={props.onForget} />
       <Button title="Done" onPress={props.onClose} />
     </View>

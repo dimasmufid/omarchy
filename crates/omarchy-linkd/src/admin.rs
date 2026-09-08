@@ -80,17 +80,20 @@ async fn execute(command: AdminCommand, state: &AppState) -> AdminResponse {
         },
         AdminCommand::PairPending => {
             let pairing = state.pairing.lock().await;
-            let data = pairing.as_ref().and_then(|window| {
-                window.request.as_ref().map(|request| {
-                    serde_json::json!({
-                        "deviceId": request.device_id,
-                        "deviceName": request.device_name,
-                        "platform": request.platform,
-                        "appVersion": request.app_version,
-                        "expiresAt": window.expires_at,
+            let data = pairing
+                .as_ref()
+                .filter(|window| !window.is_expired())
+                .and_then(|window| {
+                    window.request.as_ref().map(|request| {
+                        serde_json::json!({
+                            "deviceId": request.device_id,
+                            "deviceName": request.device_name,
+                            "platform": request.platform,
+                            "appVersion": request.app_version,
+                            "expiresAt": window.expires_at,
+                        })
                     })
-                })
-            });
+                });
             ok_json(serde_json::json!({ "request": data }))
         }
         AdminCommand::PairApprove => match state.approve_pending().await {

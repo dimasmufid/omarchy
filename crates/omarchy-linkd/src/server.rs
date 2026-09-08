@@ -23,7 +23,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use omarchy_link_protocol::{
     ApiError, ClipboardReadResponse, ClipboardWriteRequest, InboxTextRequest, LockRequest,
     MAX_CONTROL_BYTES, MAX_FILE_BYTES, OperationResponse, PROTOCOL_VERSION, PairApproved,
-    PairRequest, Permission, StatusResponse,
+    PairCompleteRequest, PairRequest, Permission, StatusResponse,
 };
 use rcgen::generate_simple_self_signed;
 use sha2::{Digest, Sha256};
@@ -35,7 +35,7 @@ use crate::{
     adapters::{self, notify_received, sanitize_filename},
     admin,
     config::{AppPaths, set_private_file},
-    state::{AppState, PairDecision},
+    state::{AppState, PairDecision, now_unix},
 };
 
 const MAX_PAIRING_FAILURES: u8 = 8;
@@ -73,6 +73,7 @@ pub async fn run(config: RunConfig) -> Result<(), Box<dyn std::error::Error + Se
 fn router(state: Arc<AppState>) -> Router {
     let control = Router::new()
         .route("/v1/pair/request", post(pair_request))
+        .route("/v1/pair/complete", post(pair_complete))
         .route("/v1/status", get(status))
         .route("/v1/clipboard", get(clipboard_read).post(clipboard_write))
         .route("/v1/inbox/text", post(inbox_text))
@@ -95,7 +96,7 @@ async fn pair_request(
         .validate()
         .map_err(|_| AppError::bad_request("pair.invalid_request", "Pairing request is invalid"))?;
 
-    let notify = {
+    let (window_id, notify, remaining_seconds) = {
         let mut pairing = state.pairing.lock().await;
         let window = pairing
             .as_mut()
@@ -126,10 +127,14 @@ async fn pair_request(
             ));
         }
         window.request = Some(request);
-        Arc::clone(&window.notify)
+        (
+            window.id,
+            Arc::clone(&window.notify),
+            window.expires_at.saturating_sub(now_unix()),
+        )
     };
 
-    let result = tokio::time::timeout(Duration::from_secs(5 * 60), async {
+    let result = tokio::time::timeout(Duration::from_secs(remaining_seconds), async {
         loop {
             let notified = notify.notified();
             {
@@ -137,6 +142,12 @@ async fn pair_request(
                 let window = pairing.as_ref().ok_or_else(|| {
                     AppError::gone("pair.closed", "The pairing window was closed")
                 })?;
+                if window.id != window_id {
+                    return Err(AppError::gone(
+                        "pair.replaced",
+                        "A newer pairing code replaced this request",
+                    ));
+                }
                 if window.is_expired() {
                     return Err(AppError::gone(
                         "pair.expired",
@@ -156,11 +167,65 @@ async fn pair_request(
             notified.await;
         }
     })
-    .await
-    .map_err(|_| AppError::gone("pair.expired", "The pairing request timed out"))??;
+    .await;
 
-    *state.pairing.lock().await = None;
-    Ok(Json(result))
+    match result {
+        Ok(Ok(approved)) => Ok(Json(approved)),
+        Ok(Err(error)) => {
+            clear_pairing_window(&state, window_id).await;
+            Err(error)
+        }
+        Err(_) => {
+            clear_pairing_window(&state, window_id).await;
+            Err(AppError::gone(
+                "pair.expired",
+                "The pairing request timed out",
+            ))
+        }
+    }
+}
+
+async fn pair_complete(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<PairCompleteRequest>,
+) -> Result<Json<OperationResponse>, AppError> {
+    request.validate().map_err(|_| {
+        AppError::bad_request("pair.invalid_completion", "Pairing completion is invalid")
+    })?;
+    let bearer = bearer_token(&headers)?;
+    state
+        .complete_pending(&request.device_id, bearer)
+        .await
+        .map_err(|error| match error {
+            crate::state::CompletionError::Expired | crate::state::CompletionError::NoWindow => {
+                AppError::gone("pair.expired", "The pairing approval has expired")
+            }
+            crate::state::CompletionError::Rejected => {
+                AppError::forbidden("pair.rejected", "Pairing was rejected on the desktop")
+            }
+            crate::state::CompletionError::InvalidCredential => {
+                AppError::unauthorized("pair.invalid_completion", "Pairing completion is invalid")
+            }
+            crate::state::CompletionError::NoRequest
+            | crate::state::CompletionError::NotApproved => {
+                AppError::conflict("pair.not_approved", "Pairing has not been approved")
+            }
+            crate::state::CompletionError::Persist(_) => {
+                AppError::service("pair.persist_failed", "Pairing could not be saved", true)
+            }
+        })?;
+    Ok(Json(completed("Pairing completed")))
+}
+
+async fn clear_pairing_window(state: &AppState, window_id: Uuid) {
+    let mut pairing = state.pairing.lock().await;
+    if pairing
+        .as_ref()
+        .is_some_and(|window| window.id == window_id)
+    {
+        *pairing = None;
+    }
 }
 
 async fn status(
@@ -417,16 +482,7 @@ async fn authorize(
     headers: &HeaderMap,
     permission: Permission,
 ) -> Result<(), AppError> {
-    let bearer = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or_else(|| {
-            AppError::unauthorized(
-                "auth.required",
-                "Pair this phone before using Omarchy Mobile",
-            )
-        })?;
+    let bearer = bearer_token(headers)?;
     if state.authorize_bearer(bearer, permission).await {
         Ok(())
     } else {
@@ -435,6 +491,19 @@ async fn authorize(
             "This phone is revoked or lacks permission",
         ))
     }
+}
+
+fn bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
+    headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or_else(|| {
+            AppError::unauthorized(
+                "auth.required",
+                "Pair this phone before using Omarchy Mobile",
+            )
+        })
 }
 
 fn required_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, AppError> {
@@ -594,6 +663,8 @@ impl IntoResponse for AppError {
 mod tests {
     use super::*;
     use crate::state::{PeerRecord, hash_token};
+    use axum::http::Request;
+    use tower::ServiceExt;
 
     #[test]
     fn duplicate_filename_stays_inside_inbox() {
@@ -679,6 +750,148 @@ mod tests {
             .expect_err("rate limited");
         assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(limited.body.error.code, "pair.rate_limited");
+    }
+
+    #[tokio::test]
+    async fn newer_pairing_code_closes_the_waiting_request() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let state = AppState::load(AppPaths::under(temporary.path()), "test-fingerprint".into())
+            .expect("state");
+        let first = state
+            .open_pairing_window("127.0.0.1", 42_783)
+            .await
+            .expect("first window");
+        let secret = url::Url::parse(&first.uri)
+            .expect("pairing URI")
+            .query_pairs()
+            .find_map(|(key, value)| (key == "secret").then(|| value.into_owned()))
+            .expect("secret");
+        let request = PairRequest {
+            secret,
+            device_id: "phone_test".into(),
+            device_name: "Test phone".into(),
+            platform: omarchy_link_protocol::MobilePlatform::Android,
+            app_version: "0.1.0".into(),
+        };
+        let waiting_state = Arc::clone(&state);
+        let waiting =
+            tokio::spawn(async move { pair_request(State(waiting_state), Json(request)).await });
+        loop {
+            if state
+                .pairing
+                .lock()
+                .await
+                .as_ref()
+                .is_some_and(|window| window.request.is_some())
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        state
+            .open_pairing_window("127.0.0.1", 42_783)
+            .await
+            .expect("replacement window");
+        let error = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("old request should wake")
+            .expect("task")
+            .expect_err("old request should close");
+        assert_eq!(error.body.error.code, "pair.replaced");
+        assert!(state.pairing.lock().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn pairing_routes_require_completion_before_status_is_authorized() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let state = AppState::load(AppPaths::under(temporary.path()), "test-fingerprint".into())
+            .expect("state");
+        let pairing = state
+            .open_pairing_window("127.0.0.1", 42_783)
+            .await
+            .expect("pairing window");
+        let secret = url::Url::parse(&pairing.uri)
+            .expect("pairing URI")
+            .query_pairs()
+            .find_map(|(key, value)| (key == "secret").then(|| value.into_owned()))
+            .expect("secret");
+        let app = router(Arc::clone(&state));
+        let pair_app = app.clone();
+        let pair_body = serde_json::to_vec(&PairRequest {
+            secret,
+            device_id: "phone_route_test".into(),
+            device_name: "Route test phone".into(),
+            platform: omarchy_link_protocol::MobilePlatform::Android,
+            app_version: "0.1.0".into(),
+        })
+        .expect("pair body");
+        let waiting = tokio::spawn(async move {
+            pair_app
+                .oneshot(
+                    Request::post("/v1/pair/request")
+                        .header("content-type", "application/json")
+                        .body(Body::from(pair_body))
+                        .expect("pair request"),
+                )
+                .await
+                .expect("pair response")
+        });
+        loop {
+            if state
+                .pairing
+                .lock()
+                .await
+                .as_ref()
+                .is_some_and(|window| window.request.is_some())
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        state.approve_pending().await.expect("approve");
+        let response = waiting.await.expect("pair task");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), MAX_CONTROL_BYTES)
+            .await
+            .expect("approved body");
+        let approved: PairApproved = serde_json::from_slice(&body).expect("approved response");
+
+        let before = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/status")
+                    .header("authorization", format!("Bearer {}", approved.client_token))
+                    .body(Body::empty())
+                    .expect("status request"),
+            )
+            .await
+            .expect("status response");
+        assert_eq!(before.status(), StatusCode::FORBIDDEN);
+
+        let completion = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/pair/complete")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {}", approved.client_token))
+                    .body(Body::from(r#"{"deviceId":"phone_route_test"}"#))
+                    .expect("completion request"),
+            )
+            .await
+            .expect("completion response");
+        assert_eq!(completion.status(), StatusCode::OK);
+
+        let after = app
+            .oneshot(
+                Request::get("/v1/status")
+                    .header("authorization", format!("Bearer {}", approved.client_token))
+                    .body(Body::empty())
+                    .expect("status request"),
+            )
+            .await
+            .expect("status response");
+        assert_eq!(after.status(), StatusCode::OK);
     }
 
     #[tokio::test]
