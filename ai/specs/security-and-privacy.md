@@ -138,6 +138,8 @@ It still minimizes secrets, validates boundaries, and supports revocation.
 - Store database references to key aliases, never key bytes.
 - Device migration must not silently copy a non-exportable identity to another
   physical phone. A restored app may require re-pairing.
+- A fresh app sandbox clears any secure-store pairing record that survived an
+  uninstall, so reinstalling the mobile app requires explicit re-pairing.
 - Biometric access control MAY protect high-risk actions, but recovery behavior
   and accessibility must be designed before it becomes mandatory.
 

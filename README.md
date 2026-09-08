@@ -32,6 +32,20 @@ omarchy-mobile inbox --open
 journalctl --user -u omarchy-linkd -f
 ```
 
+To remove the companion, stop and disable the service, then remove its unit and
+binaries. Revoke first if a phone is paired. The final command deletes the
+desktop identity and cannot be undone; received inbox files are deliberately
+left for the user to review and delete separately.
+
+```bash
+omarchy-mobile revoke --yes
+systemctl --user disable --now omarchy-linkd.service
+rm ~/.config/systemd/user/omarchy-linkd.service
+rm ~/.local/bin/omarchy-linkd ~/.local/bin/omarchy-mobile
+rm -r ~/.local/state/omarchy-mobile
+systemctl --user daemon-reload
+```
+
 If the desktop firewall denies unsolicited LAN traffic, allow only the daemon's
 TCP port from the current trusted LAN. Replace the example subnet with the one
 reported by `ip route`; do not expose this port to every network:
@@ -76,3 +90,8 @@ npx expo-doctor
 The detailed product, architecture, security, platform, and release contracts
 live in [`ai/specs`](ai/specs/README.md). Phase 1 is deliberately local-only;
 the Cloudflare architecture documented there is future optional infrastructure.
+The shipped data behavior is summarized in [`PRIVACY.md`](PRIVACY.md), and the
+remaining physical-device and account-owned gates are tracked in
+[`ai/specs/release-checklist.md`](ai/specs/release-checklist.md).
+Security issues should follow [`SECURITY.md`](SECURITY.md) and be reported
+privately rather than through a public issue.

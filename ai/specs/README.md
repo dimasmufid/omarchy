@@ -23,6 +23,7 @@ Linux administration console.
 | [Native design system](native-design-system.md) | Expo UI with SwiftUI/Liquid Glass and Jetpack Compose/Material components |
 | [Cloud infrastructure](cloud-infrastructure.md) | Optional Cloudflare relay, PlanetScale metadata, R2 delivery, Queues, deployment, and VPS boundary |
 | [Delivery and verification](delivery-and-verification.md) | Milestones, repository shape, testing strategy, acceptance gates, and rollout |
+| [Phase 1 release checklist](release-checklist.md) | Current evidence plus physical-device, EAS, and store release gates |
 
 ## Working decisions
 
