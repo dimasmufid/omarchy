@@ -85,6 +85,10 @@ to a required cloud service.
   desktop window manager on a small screen.
 - Prefer a few large, searchable actions over dense system controls.
 - Use terminal language only for technical state, logs, and command results.
+- Render interactive surfaces with Expo UI (`@expo/ui`): real SwiftUI and
+  Liquid Glass where supported on iOS, and real Jetpack Compose with Material 3
+  on Android.
+- Share semantics and product identity across platforms, not identical pixels.
 
 ### 5.4 Extensible but constrained
 
@@ -148,7 +152,9 @@ background presence, Tailscale, and a shell management panel are not Phase 1.
 
 - Multiple desktops with presence-aware switching.
 - Android persistent connection mode with an explicit foreground notification.
-- Optional push relay for notifications when no direct route exists.
+- Optional Cloudflare live relay when no direct route exists.
+- End-to-end encrypted offline delivery through private R2 storage.
+- Optional push delivery processed through Cloudflare Queues.
 - Widgets and iOS Live Activities.
 - Resumable background uploads and downloads.
 - Rich clipboard formats and clipboard history selection.
@@ -164,6 +170,7 @@ background presence, Tailscale, and a shell management panel are not Phase 1.
 - Silent continuous clipboard reading on iOS or modern Android.
 - Circumventing background-execution or clipboard privacy restrictions.
 - Required public cloud storage or a required Omarchy identity service.
+- Allowing Cloudflare, PlanetScale, or an operator to decrypt relayed content.
 - Administrative fleet management.
 - Installing desktop packages or changing the firewall without desktop consent.
 - Executing capability-provided code inside the mobile application.
@@ -362,15 +369,21 @@ analytics requires separate opt-in and a documented data contract.
 
 ## 13. Visual direction
 
-- Near-black neutral canvas with a synchronized Omarchy accent.
-- Regular interface type for reading; monospace for identifiers, connection
-  details, and command output.
-- Restrained corner radius and borders; no ornamental terminal chrome.
-- Large actions with concise labels and haptic confirmation.
-- Compact device status at the top of Home.
-- Search-first Tools navigation rather than nested administration menus.
-- Motion communicates connection and transfer state and respects reduced-motion
-  preferences.
+- Follow [`native-design-system.md`](native-design-system.md).
+- Use native navigation, controls, sheets, dialogs, progress, haptics, type
+  scaling, and accessibility on each platform.
+- On supported iOS versions, use official Liquid Glass for the functional layer
+  of navigation and important interactive controls, not as decorative card
+  backgrounds.
+- On Android, use Jetpack Compose Material 3 and appropriate Material 3
+  Expressive components rather than reproducing Liquid Glass.
+- Use a synchronized Omarchy accent only after the native renderer corrects it
+  for system contrast and accessibility.
+- Use regular system interface type for reading; reserve monospace for
+  identifiers, connection details, and command output.
+- Keep actions concise and device status compact.
+- Motion communicates connection and transfer state and respects platform
+  reduced-motion preferences.
 
 ## 14. Open questions
 

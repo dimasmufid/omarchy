@@ -64,6 +64,22 @@ verify the discovered endpoint against their pinned desktop identity.
 
 Manual host and port entry is required as a discovery fallback.
 
+### 2.4 Optional Cloudflare relay
+
+The post-MVP cloud route is specified in
+[`cloud-infrastructure.md`](cloud-infrastructure.md).
+
+- Both desktop and mobile connect outward to a per-relationship Durable Object.
+- The Durable Object receives a bounded outer routing envelope and opaque inner
+  ciphertext.
+- The paired endpoints apply application-layer end-to-end encryption in
+  addition to Cloudflare transport TLS.
+- Cloud routing IDs are independent of local device and discovery IDs.
+- Actions are never stored offline. An absent desktop produces
+  `route.desktop_offline`.
+- Offline file objects use separately negotiated, client-side encryption and
+  private R2 storage.
+
 ## 3. Identity and pairing
 
 ### 3.1 Long-term identity

@@ -41,6 +41,15 @@ not lower-priority features.
 
 ## 4. P0: build this
 
+### 4.0 Infrastructure boundary
+
+- Phase 1 deploys no required cloud backend.
+- Cloudflare, PlanetScale, R2, Queues, and the Dokploy VPS are not contacted by
+  core P0 flows.
+- The phone talks directly to the user's `omarchy-linkd` over the LAN.
+- Cloud infrastructure begins at P1 and follows
+  [`cloud-infrastructure.md`](cloud-infrastructure.md).
+
 ### 4.1 Supported topology
 
 - One mobile device paired with one Omarchy desktop.
@@ -54,6 +63,13 @@ The code may use stable IDs that permit multiple devices later, but Phase 1 UI,
 testing, and product behavior do not manage multiple devices.
 
 ### 4.2 Mobile screens
+
+All interactive surfaces follow
+[`native-design-system.md`](native-design-system.md). Phase 1 implements only
+the eight P0 native component families defined there. Expo UI renders SwiftUI
+and official Liquid Glass where available on iOS, and Jetpack Compose Material 3
+on Android.
+The MVP does not build a general-purpose cross-platform component library.
 
 #### Pairing
 
@@ -180,6 +196,8 @@ P1 expands the validated loop without changing the product into a platform yet:
 - Add a minimal Omarchy shell panel for pairing, presence, and revocation.
 - Add desktop-to-mobile file and text delivery while the app is foregrounded.
 - Support Tailscale routes.
+- Add an optional Cloudflare Worker and per-relationship Durable Object live
+  relay for users who do not use Tailscale or cannot establish a direct route.
 - Add resumable transfers and a higher configurable size limit.
 - Add media play/pause and volume.
 - Add a small, redacted activity history.
@@ -192,7 +210,8 @@ P1 expands the validated loop without changing the product into a platform yet:
 - Owner-defined command capabilities.
 - Provider SDK and third-party integrations.
 - Pinned actions and command search.
-- Optional relay and closed-app push notifications.
+- R2-backed end-to-end encrypted offline delivery and closed-app push
+  notifications through Cloudflare Queues.
 - Widgets, Live Activities, and richer system surfaces.
 - Automation triggers and completion notifications.
 - Rich clipboard types and history.
@@ -271,6 +290,7 @@ This is the first internally useful build.
 ### Slice 6: polish and beta gate
 
 - Final Home and Settings states.
+- Native Expo UI SwiftUI/Liquid Glass and Compose/Material verification.
 - Accessibility and physical-device matrix.
 - Packaging, upgrade, diagnostics, and user documentation.
 
@@ -296,4 +316,3 @@ Only three product choices are required before Slice 1:
 2. What desktop inbox directory should received items use by default?
 3. Should the Phase 1 CLI be a standalone `omarchy-mobile` binary first, or be
    wired into the `omarchy mobile ...` command family immediately?
-

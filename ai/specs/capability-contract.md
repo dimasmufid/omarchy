@@ -14,6 +14,11 @@ definitions; the official mobile application renders a finite set of native
 components. Providers cannot send executable JavaScript, HTML, QML, Swift,
 Kotlin, CSS, SVG, or arbitrary layout instructions.
 
+Native rendering follows [`native-design-system.md`](native-design-system.md).
+Providers select semantic component and action types only. They cannot request
+Liquid Glass, a Material implementation, raw platform icons, colors, shapes, or
+motion directly.
+
 ## 2. Design principles
 
 - The owner decides what is exposed.
@@ -361,4 +366,3 @@ clipboard writes, URL opening, or file execution indirectly through result text.
 
 Each addition requires accessibility, spoofing, resource, and compatibility
 review before entering the supported vocabulary.
-

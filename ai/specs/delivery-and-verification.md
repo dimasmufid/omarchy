@@ -25,12 +25,18 @@ apps/
 ├── mobile/                         # Expo React Native application
 │   ├── app/                        # routes
 │   ├── src/                        # features, UI, state, protocol client
-│   ├── modules/omarchy-link/       # local Swift/Kotlin Expo module
+│   ├── modules/omarchy-link/       # native identity/network/lifecycle module
+│   ├── src/components/omarchy-ui/  # @expo/ui-backed design-system facade
 │   ├── extensions/ios-share/       # native share extension source
 │   ├── plugins/                    # Expo config plugins
 │   └── e2e/
 │
-└── shell-plugin/                   # Omarchy shell pairing/device UI
+├── shell-plugin/                   # Omarchy shell pairing/device UI
+└── cloud/                          # Worker, Durable Object, Queue consumers
+    ├── src/
+    ├── migrations/
+    ├── test/
+    └── wrangler.jsonc
 
 crates/
 ├── omarchy-linkd/                  # Rust per-user daemon
@@ -42,6 +48,10 @@ packages/
 ├── protocol-typescript/            # generated TS types/client primitives
 ├── capability-components/          # mobile renderers for safe contract
 └── design-system/                  # mobile tokens and components
+
+infra/
+├── cloudflare/                     # config, environment, deployment docs
+└── planetscale/                    # SQL migrations and role policy
 
 providers/
 ├── system/
@@ -93,6 +103,8 @@ Demonstration:
 5. iOS Share Extension and Android share intent each receive text and deliver it
    to the foreground application.
 6. A test file transfers with cancellation and integrity verification.
+7. The same semantic action props render through an Expo UI SwiftUI button using
+   Liquid Glass where available and an Expo UI Compose Material 3 button.
 
 Exit criteria:
 
@@ -100,6 +112,8 @@ Exit criteria:
 - No secret or shared content appears in logs.
 - Clean Expo prebuild reproduces required native targets and declarations.
 - Known background behavior is recorded, not inferred.
+- Native view mounting, events, accessibility, fallback, and unmount behavior
+  pass on both platforms or a larger compound-view boundary is selected.
 
 ### M2: Trusted device foundation
 
@@ -201,6 +215,46 @@ Exit criteria:
 - Store privacy labels match actual application behavior.
 - No P0/P1 defects remain open.
 
+### Optional track C1: Cloudflare live relay — P1
+
+Goal: add remote live operation without weakening the local-first trust model.
+
+Deliverables:
+
+- Worker authentication, rate limiting, and route validation.
+- One hibernating `RelayRoom` Durable Object per relay relationship.
+- PlanetScale Postgres metadata through Hyperdrive.
+- Application-layer E2EE over relayed WebSockets.
+- Live revocation and `desktop_offline` behavior.
+- Independent cloud threat-model review and cost alerts.
+
+Exit criteria:
+
+- LAN behavior passes while every cloud dependency is unavailable.
+- Worker, Durable Object, PlanetScale, and logs cannot recover plaintext test
+  payloads.
+- Remote actions execute only while the desktop is connected and never queue.
+- Cross-relationship routing and revoked-device tests fail closed.
+- Durable Object hibernation/restart preserves safe routing behavior.
+
+### Optional track C2: Encrypted offline delivery — P2
+
+Goal: deliver content while the receiver is temporarily offline.
+
+Deliverables:
+
+- Client-encrypted private R2 objects.
+- Scoped transfer grants, lifecycle expiry, and quotas.
+- Queue-backed content-free push and cleanup workers.
+- PlanetScale transfer metadata without filenames or content keys.
+
+Exit criteria:
+
+- R2 stores only ciphertext and expired objects are reconciled.
+- Duplicate Queue delivery is harmless.
+- Push payloads disclose no content.
+- Offline files cannot be substituted across relay relationships.
+
 ## 4. Test strategy
 
 ### 4.1 Schema and contract tests
@@ -274,6 +328,11 @@ Rust daemon:
 - Dynamic type/font scale, screen reader, reduced motion, high contrast, and
   color-blind-safe state communication.
 - Small phone, large phone, and tablet layout smoke tests.
+- Expo UI SwiftUI Liquid Glass behavior on supported iOS and native fallback on
+  the oldest supported iOS release.
+- Compose Material 3 behavior across the supported Android API range.
+- Native view mount/unmount, event, memory, and lifecycle behavior within React
+  Native navigation.
 
 ### 4.6 Physical and network tests
 

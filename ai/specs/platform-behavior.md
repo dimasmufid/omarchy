@@ -14,6 +14,11 @@ Every behavior must be verified on currently supported OS versions and physical
 devices before release. Simulator success is insufficient for discovery,
 background work, clipboard, notifications, or share extensions.
 
+Interactive UI behavior follows
+[`native-design-system.md`](native-design-system.md). Native here means real
+SwiftUI or Jetpack Compose components through Expo UI, not platform-themed
+JavaScript replicas.
+
 ## 2. Support proposal
 
 - iOS and iPadOS: current major and previous two major releases at public launch.
@@ -74,6 +79,8 @@ Examples:
 - Optional Widget Extension only after MVP.
 - Shared framework or Swift package for identity, protocol, transfer, and
   validated App Group queue access.
+- Local OmarchyUI TypeScript facade using `@expo/ui/swift-ui` controls and
+  official Liquid Glass styles with availability-gated native fallbacks.
 
 Extension entitlements and App Group identifiers are managed by an Expo config
 plugin and validated in CI after prebuild.
@@ -119,6 +126,9 @@ plugin and validated in CI after prebuild.
   resume until relaunch.
 - Desktop-originated closed-app notifications require APNs, which implies an
   optional relay or user-controlled push bridge not included in local-only MVP.
+  The preferred hosted path is a content-free event through Cloudflare Queues;
+  the consumer contacts APNs without including clipboard, filename, or action
+  content in the push payload.
 
 ### 5.6 Secure storage
 
@@ -139,6 +149,7 @@ plugin and validated in CI after prebuild.
 - Optional bound/foreground connection service.
 - WorkManager workers for deferrable cleanup and eligible transfer work.
 - App widgets only after MVP.
+- Local OmarchyUI module hosting Jetpack Compose Material 3 renderers.
 
 Manifest services, intent filters, network configuration, and permissions are
 generated through tested Expo config plugins.
@@ -235,6 +246,8 @@ If Expo Updates is enabled:
 - Biometric authentication.
 - Notifications and persistent Android service controls.
 - File and photo pickers.
+- Liquid Glass hierarchy on supported iOS versions.
+- Material 3/Material 3 Expressive hierarchy on Android.
 
 The Omarchy visual system remains coherent, but it must not erase platform
 expectations or accessibility behavior.
@@ -267,4 +280,3 @@ At minimum, test:
    resumption according to documented platform behavior.
 6. Android foreground connection mode survives expected lifecycle events with a
    clear notification and battery impact measurement.
-

@@ -38,6 +38,21 @@ native share integration ── validation and bounded staging
 OmarchyLink transfer layer
 ```
 
+Optional cloud adds this boundary:
+
+```text
+paired endpoint ── application ciphertext ── Worker / Durable Object
+                                                │
+                                      routing metadata only
+                                                │
+                                      PlanetScale / R2 / Queues
+```
+
+Cloudflare and PlanetScale are trusted for availability, routing enforcement,
+and durable metadata integrity. They are not trusted with plaintext clipboard,
+file, or action payloads. See
+[`cloud-infrastructure.md`](cloud-infrastructure.md).
+
 The following remain untrusted even after pairing:
 
 - device display names;
@@ -110,6 +125,9 @@ It still minimizes secrets, validates boundaries, and supports revocation.
 | Denial of service | Message-size, connection, rate, queue, CPU, and transfer concurrency limits |
 | Downgrade | Authenticated version negotiation and minimum supported security version |
 | Malicious update | Signed store releases; signed desktop packages; documented release provenance |
+| Cloud operator or database disclosure | Application-layer E2EE; metadata minimization; no payload keys in cloud systems |
+| Cross-link relay routing | One Durable Object per random relationship; authenticated role and destination checks |
+| Offline object disclosure | Encrypt before R2 upload; short grants and expiry; content key only through E2EE channel |
 
 ## 6. Identity storage
 
@@ -239,6 +257,11 @@ There is no default remote telemetry. Any future analytics upload requires:
 - no payload-derived values;
 - no requirement for core operation.
 
+The optional Cloudflare service may retain the minimum operational metadata
+documented in `cloud-infrastructure.md`; enabling relay must disclose that
+Cloudflare can observe timing, ciphertext sizes, network metadata, and routing
+relationships even though payload content remains encrypted.
+
 ## 12. Mobile platform privacy
 
 - Permission prompts occur in context and explain the immediate benefit.
@@ -299,4 +322,3 @@ Before public beta:
 4. Default inbox retention.
 5. Optional relay threat model and metadata exposure.
 6. Store and non-store release signing and reproducibility requirements.
-

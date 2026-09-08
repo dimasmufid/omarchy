@@ -70,6 +70,13 @@ infrastructure solely because it appears in the full architecture.
                          Mobile device
 ```
 
+Optional remote infrastructure is defined in
+[`cloud-infrastructure.md`](cloud-infrastructure.md). Direct LAN traffic does
+not pass through the cloud. When enabled after Phase 1, both paired devices may
+connect outward to a Cloudflare Durable Object that forwards end-to-end
+encrypted frames. PlanetScale Postgres through Hyperdrive stores only durable
+control-plane metadata; private R2 stores only client-encrypted offline objects.
+
 ## 4. Components
 
 ### 4.1 React Native application
@@ -82,6 +89,8 @@ Responsibilities:
 - Transfer and action progress presentation.
 - Search, pinned tools, inbox management, and diagnostics.
 - Calling typed APIs exposed by the OmarchyLink module.
+- Supplying semantic view models to Expo UI's platform-native SwiftUI and
+  Compose renderers defined in `native-design-system.md`.
 
 It MUST NOT:
 
@@ -90,6 +99,8 @@ It MUST NOT:
 - Maintain a supposedly permanent background connection in JavaScript.
 - Execute markup or code received from a desktop.
 - Construct shell commands.
+- Choose raw Liquid Glass, Material, blur, shape, or animation implementation
+  values at feature call sites.
 
 ### 4.2 OmarchyLink Expo module
 
@@ -131,6 +142,24 @@ interface OmarchyLinkModule {
 
 The final interface SHOULD be generated from or checked against the protocol
 schema to avoid Swift, Kotlin, Rust, and TypeScript drift.
+
+### 4.2.1 OmarchyUI facade
+
+UI rendering lives behind a local TypeScript design-system facade backed by
+Expo UI (`@expo/ui`). This keeps visual code separate from identity, transport,
+and authorization behavior without reimplementing native component bridges.
+
+- iOS implementation uses `@expo/ui/swift-ui` and official Liquid Glass styles
+  on supported releases, with native SwiftUI fallbacks on older releases.
+- Android implementation uses `@expo/ui/jetpack-compose` and Material 3.
+- Universal `@expo/ui` components are used when they preserve the intended
+  platform-native behavior.
+- React Native passes semantic state and receives typed user intents.
+- Native renderers do not perform network requests or own business state.
+- Custom Swift/Kotlin views are a documented fallback, not the default.
+
+See [`native-design-system.md`](native-design-system.md) for the complete
+component contract and P0 inventory.
 
 ### 4.3 Share integrations
 
@@ -316,6 +345,19 @@ their own data. Database rows reference generated paths.
   stored a terminal result.
 - Resumable transfers negotiate remaining byte ranges.
 - The mobile client refreshes revisions after reconnecting.
+
+### 8.4 Optional Cloudflare relay
+
+- Direct LAN remains the preferred route.
+- A cloud-enabled desktop opens an outbound authenticated WebSocket to its
+  per-relationship Durable Object.
+- Mobile uses the same relay only when a direct route is unavailable or the user
+  explicitly selects it.
+- Worker and Durable Object validate an outer routing envelope but cannot
+  decrypt the inner Omarchy protocol message.
+- Remote action requests are forwarded only while the desktop is connected;
+  they are never queued for later execution.
+- Relay failure leaves local operation unaffected.
 
 ## 9. Request execution pipeline
 
