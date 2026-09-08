@@ -8,7 +8,10 @@ export async function loadPairing(): Promise<PairedDesktop | null> {
   const value = await SecureStore.getItemAsync(KEY);
   if (!value) return null;
   try {
-    return JSON.parse(value) as PairedDesktop;
+    const parsed = JSON.parse(value) as PairedDesktop & { secret?: string };
+    const { secret: _expiredSecret, ...pairing } = parsed;
+    if (_expiredSecret) await savePairing(pairing);
+    return pairing;
   } catch {
     await SecureStore.deleteItemAsync(KEY);
     return null;

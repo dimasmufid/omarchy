@@ -1,18 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 
 import ActionSurface from './src/ActionSurface';
-import { getClipboard, getStatus, lockDesktop, pairDesktop, sendClipboard, sendFile, sendText } from './src/client';
+import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
 import { parsePairingCode } from './src/model';
 import { clearPairing, loadPairing, savePairing } from './src/storage';
+import { useLocalIncomingShare } from './src/useLocalIncomingShare';
+
+type PendingFile = {
+  uri: string;
+  name: string;
+  size?: number;
+  mimeType?: string;
+  fromShare: boolean;
+};
 
 export default function App() {
+  const incomingShare = useLocalIncomingShare();
+  const handledShare = useRef<string | null>(null);
   const [desktop, setDesktop] = useState<PairedDesktop | null>();
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [busy, setBusy] = useState(false);
@@ -20,7 +32,9 @@ export default function App() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [composerFromShare, setComposerFromShare] = useState(false);
   const [sharedText, setSharedText] = useState('');
+  const [incomingFile, setIncomingFile] = useState<PendingFile | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   useEffect(() => {
@@ -37,9 +51,19 @@ export default function App() {
       await getStatus(paired);
       setConnection('online');
       setMessage('Connected directly over your local network.');
-    } catch (error) {
-      setConnection('offline');
-      setMessage(errorMessage(error));
+    } catch (initialError) {
+      try {
+        const recovered = await rediscoverDesktop(paired);
+        if (!recovered) throw initialError;
+        await getStatus(recovered);
+        await savePairing(recovered);
+        setDesktop(recovered);
+        setConnection('online');
+        setMessage('Reconnected after your desktop address changed.');
+      } catch {
+        setConnection('offline');
+        setMessage(errorMessage(initialError));
+      }
     }
   };
 
@@ -51,14 +75,76 @@ export default function App() {
     return () => subscription.remove();
   }, [desktop]);
 
-  const run = async (operation: () => Promise<{ message?: string }>, success?: string) => {
+  useEffect(() => {
+    if (!desktop) {
+      if (incomingShare.sharedPayloads.length > 0) setMessage('Pair a desktop before sending this shared item.');
+      return;
+    }
+    if (incomingShare.error) {
+      setMessage(`Could not read the shared item: ${incomingShare.error.message}`);
+      incomingShare.clearSharedPayloads();
+      handledShare.current = null;
+      return;
+    }
+    if (incomingShare.sharedPayloads.length === 0) return;
+    if (incomingShare.sharedPayloads.length !== 1) {
+      setMessage('Omarchy accepts one shared item at a time.');
+      incomingShare.clearSharedPayloads();
+      handledShare.current = null;
+      return;
+    }
+    const payload = incomingShare.sharedPayloads[0];
+    const key = `${payload.shareType}:${payload.value}`;
+    if (handledShare.current === key) return;
+    handledShare.current = key;
+    if (payload.shareType === 'text' || payload.shareType === 'url') {
+      setSharedText(payload.value);
+      setComposerFromShare(true);
+      setComposerOpen(true);
+      return;
+    }
+    if (payload.shareType === 'image' || payload.shareType === 'file') {
+      const uri = payload.value;
+      let file: File;
+      try {
+        file = new File(uri);
+      } catch {
+        setMessage('The shared file is no longer available. Please share it again.');
+        incomingShare.clearSharedPayloads();
+        handledShare.current = null;
+        return;
+      }
+      const size = file.size ?? undefined;
+      if (size !== undefined && size > 25 * 1024 * 1024) {
+        setMessage('That shared file exceeds the 25 MiB limit.');
+        incomingShare.clearSharedPayloads();
+        handledShare.current = null;
+        return;
+      }
+      setIncomingFile({
+        uri,
+        name: file.name || filenameFromUri(uri, payload.shareType === 'image' ? 'shared-image' : 'shared-file'),
+        size,
+        mimeType: payload.mimeType,
+        fromShare: true,
+      });
+      return;
+    }
+    setMessage('Omarchy accepts shared text, URLs, images, and files.');
+    incomingShare.clearSharedPayloads();
+    handledShare.current = null;
+  }, [desktop, incomingShare.error, incomingShare.sharedPayloads]);
+
+  const run = async (operation: () => Promise<{ message?: string }>, success?: string): Promise<boolean> => {
     setBusy(true);
     try {
       const result = await operation();
       setConnection('online');
       setMessage(result.message ?? success ?? 'Done');
+      return true;
     } catch (error) {
       setMessage(errorMessage(error));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -87,6 +173,29 @@ export default function App() {
     const permission = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
     if (permission.granted) setScannerOpen(true);
     else setMessage('Camera access is needed to scan the desktop pairing code.');
+  };
+
+  const chooseFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ multiple: false, copyToCacheDirectory: true });
+    if (result.canceled) {
+      setMessage('File selection canceled.');
+      return;
+    }
+    const asset = result.assets[0];
+    if (asset.size !== undefined && asset.size > 25 * 1024 * 1024) {
+      setMessage('Choose a file up to 25 MiB.');
+      return;
+    }
+    setIncomingFile({ ...asset, fromShare: false });
+  };
+
+  const dismissFile = () => {
+    const cameFromShare = incomingFile?.fromShare === true;
+    setIncomingFile(null);
+    if (cameFromShare) {
+      incomingShare.clearSharedPayloads();
+      handledShare.current = null;
+    }
   };
 
   if (desktop === undefined) {
@@ -133,12 +242,8 @@ export default function App() {
           await Clipboard.setStringAsync(result.text);
           return { message: result.text ? 'Desktop clipboard copied to your phone.' : 'Desktop clipboard is empty.' };
         })}
-        onSendText={() => setComposerOpen(true)}
-        onSendFile={() => void run(async () => {
-          const result = await DocumentPicker.getDocumentAsync({ multiple: false, copyToCacheDirectory: true });
-          if (result.canceled) return { message: 'File selection canceled.' };
-          return sendFile(desktop, result.assets[0]);
-        })}
+        onSendText={() => { setComposerFromShare(false); setComposerOpen(true); }}
+        onSendFile={() => void chooseFile()}
         onLock={() => Alert.alert('Lock your desktop?', `This will immediately lock ${desktop.desktopName}.`, [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Lock', style: 'destructive', onPress: () => void run(() => lockDesktop(desktop)) },
@@ -148,21 +253,74 @@ export default function App() {
           { text: 'Forget', style: 'destructive', onPress: () => void clearPairing().then(() => setDesktop(null)) },
         ])}
       />
-      <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => setComposerOpen(false)}>
+      <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => {
+        setComposerOpen(false);
+        if (composerFromShare) {
+          incomingShare.clearSharedPayloads(); handledShare.current = null; setComposerFromShare(false); setSharedText('');
+        }
+      }}>
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.composer}>
             <Text style={styles.composerTitle}>Send text or URL</Text>
             <TextInput autoFocus multiline placeholder="What should appear in Omarchy Inbox?" style={styles.composerInput} value={sharedText} onChangeText={setSharedText} />
             <View style={styles.composerActions}>
-              <Pressable onPress={() => setComposerOpen(false)}><Text style={styles.link}>Cancel</Text></Pressable>
+              <Pressable onPress={() => {
+                setComposerOpen(false);
+                if (composerFromShare) {
+                  incomingShare.clearSharedPayloads();
+                  handledShare.current = null;
+                  setComposerFromShare(false);
+                  setSharedText('');
+                }
+              }}><Text style={styles.link}>Cancel</Text></Pressable>
               <Pressable onPress={() => {
                 const value = sharedText.trim();
                 if (!value) return;
-                setComposerOpen(false); setSharedText(''); void run(() => sendText(desktop, value));
+                const cameFromShare = composerFromShare;
+                setComposerOpen(false); setSharedText(''); setComposerFromShare(false);
+                void run(() => sendText(desktop, value)).then((sent) => {
+                  if (sent && cameFromShare) {
+                    incomingShare.clearSharedPayloads();
+                    handledShare.current = null;
+                  } else if (!sent) {
+                    setSharedText(value);
+                    setComposerFromShare(cameFromShare);
+                    setComposerOpen(true);
+                  }
+                });
               }}><Text style={styles.linkStrong}>Send</Text></Pressable>
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+      <Modal visible={incomingFile !== null} transparent animationType="fade" onRequestClose={() => {
+        dismissFile();
+      }}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.composer}>
+            <Text style={styles.composerTitle}>{incomingFile?.fromShare ? 'Send shared file?' : 'Send this file?'}</Text>
+            <Text style={styles.fileName}>{incomingFile?.name}</Text>
+            <Text style={styles.fileMeta}>{incomingFile?.size === undefined ? 'Size will be checked before sending' : formatBytes(incomingFile.size)} · to {desktop.desktopName}</Text>
+            <View style={styles.composerActions}>
+              <Pressable onPress={() => {
+                dismissFile();
+              }}><Text style={styles.link}>Cancel</Text></Pressable>
+              <Pressable onPress={() => {
+                const file = incomingFile;
+                if (!file) return;
+                setIncomingFile(null);
+                void run(() => sendFile(desktop, file)).then((sent) => {
+                  if (sent && file.fromShare) {
+                    incomingShare.clearSharedPayloads();
+                    handledShare.current = null;
+                  } else if (!sent) {
+                    setIncomingFile(file);
+                  }
+                });
+              }}><Text style={styles.linkStrong}>Send</Text></Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -170,6 +328,16 @@ export default function App() {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong.';
+}
+
+function filenameFromUri(uri: string, fallback: string): string {
+  const value = uri.split('/').pop()?.split('?')[0];
+  if (!value) return fallback;
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MiB` : `${Math.max(1, Math.ceil(bytes / 1024))} KiB`;
 }
 
 const styles = StyleSheet.create({
@@ -186,4 +354,5 @@ const styles = StyleSheet.create({
   composer: { gap: 16, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: '#fff', padding: 24, paddingBottom: 38 }, composerTitle: { fontSize: 22, fontWeight: '700' },
   composerInput: { minHeight: 130, borderRadius: 14, backgroundColor: '#f2eff5', padding: 14, textAlignVertical: 'top' }, composerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 28 },
   link: { color: '#5b5362', fontSize: 17 }, linkStrong: { color: '#6d28d9', fontSize: 17, fontWeight: '700' },
+  fileName: { fontSize: 17, fontWeight: '600' }, fileMeta: { color: '#6f6875', fontSize: 14 },
 });

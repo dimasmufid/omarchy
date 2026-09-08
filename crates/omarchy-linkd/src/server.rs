@@ -486,10 +486,7 @@ async fn advertise(
         .as_ref()
         .is_some_and(|window| !window.is_expired());
     let properties = HashMap::from([
-        (
-            "id".to_owned(),
-            persisted.desktop_id.chars().take(20).collect::<String>(),
-        ),
+        ("id".to_owned(), persisted.desktop_id.clone()),
         ("pv".to_owned(), PROTOCOL_VERSION.to_string()),
         ("pair".to_owned(), u8::from(pair).to_string()),
     ]);

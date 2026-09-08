@@ -12,7 +12,9 @@
       "bundleIdentifier": "org.omarchy.mobile",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Omarchy connects directly to your desktop on your local network.",
-        "NSBonjourServices": ["_omarchy._tcp"],
+        "NSBonjourServices": [
+          "_omarchy._tcp"
+        ],
         "NSCameraUsageDescription": "Scan the one-time QR code shown by your Omarchy desktop."
       }
     },
@@ -33,8 +35,38 @@
       ]
     },
     "plugins": [
-      ["expo-camera", { "cameraPermission": "Scan the one-time QR code shown by your Omarchy desktop.", "microphonePermission": false, "recordAudioAndroid": false }],
-      ["expo-secure-store", { "configureAndroidBackup": true }]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan the one-time QR code shown by your Omarchy desktop.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsFileWithMaxCount": 1,
+              "supportsImageWithMaxCount": 1,
+              "supportsText": true,
+              "supportsWebUrlWithMaxCount": 1
+            }
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": ["text/plain", "text/*", "image/*", "application/*"]
+          }
+        }
+      ]
     ]
   }
 }

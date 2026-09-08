@@ -2,19 +2,21 @@ import { Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { File } from 'expo-file-system';
 
-import { pinnedRequest, pinnedUpload } from '../modules/omarchy-link/src/OmarchyLinkModule';
+import { discoverDesktops, pinnedRequest, pinnedUpload } from '../modules/omarchy-link/src/OmarchyLinkModule';
 import type { PairingCode, PairedDesktop } from './model';
 
 type Status = { desktopName: string; desktopId: string; serverTime: string };
 type Operation = { completed: boolean; message: string; operationId: string };
 
-function baseUrl(pairing: PairingCode): string {
+type DesktopEndpoint = Omit<PairingCode, 'secret'>;
+
+function baseUrl(pairing: DesktopEndpoint): string {
   const host = pairing.host.includes(':') ? `[${pairing.host}]` : pairing.host;
   return `https://${host}:${pairing.port}`;
 }
 
 async function request<T>(
-  pairing: PairingCode,
+  pairing: DesktopEndpoint,
   path: string,
   method: 'GET' | 'POST',
   token?: string,
@@ -53,7 +55,14 @@ export async function pairDesktop(code: PairingCode, deviceId: string): Promise<
       appVersion: '1.0.0',
     },
   );
-  return { ...code, desktopName: result.desktopName, clientToken: result.clientToken, deviceId };
+  const { secret: _usedSecret, ...identity } = code;
+  return { ...identity, desktopName: result.desktopName, clientToken: result.clientToken, deviceId };
+}
+
+export async function rediscoverDesktop(desktop: PairedDesktop): Promise<PairedDesktop | null> {
+  const discovered = (await discoverDesktops(2_000)).find((candidate) => candidate.id === desktop.desktopId);
+  if (!discovered) return null;
+  return { ...desktop, host: discovered.host, port: discovered.port, desktopName: discovered.name };
 }
 
 export const getStatus = (desktop: PairedDesktop) =>

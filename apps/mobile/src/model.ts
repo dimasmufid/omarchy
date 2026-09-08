@@ -7,7 +7,7 @@ export type PairingCode = {
   port: number;
 };
 
-export type PairedDesktop = PairingCode & {
+export type PairedDesktop = Omit<PairingCode, 'secret'> & {
   clientToken: string;
   deviceId: string;
 };
