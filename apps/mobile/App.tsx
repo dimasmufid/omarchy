@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
@@ -8,6 +8,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 
 import ActionSurface from './src/ActionSurface';
+import SettingsSurface from './src/SettingsSurface';
 import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
 import { parsePairingCode } from './src/model';
@@ -30,6 +31,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready');
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [lastSeenAt, setLastSeenAt] = useState<string>();
   const [manualCode, setManualCode] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerFromShare, setComposerFromShare] = useState(false);
@@ -40,7 +43,10 @@ export default function App() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   useEffect(() => {
-    loadPairing().then(setDesktop).catch((error) => {
+    loadPairing().then((paired) => {
+      setDesktop(paired);
+      setLastSeenAt(paired?.lastSeenAt);
+    }).catch((error) => {
       setMessage(errorMessage(error));
       setDesktop(null);
     });
@@ -51,17 +57,27 @@ export default function App() {
     setConnection('checking');
     try {
       await getStatus(paired);
+      const seenAt = new Date().toISOString();
+      setLastSeenAt(seenAt);
+      const saved = await savePairing({ ...paired, lastSeenAt: seenAt }).then(() => true, () => false);
       setConnection('online');
-      setMessage('Connected directly over your local network.');
+      setMessage(saved
+        ? 'Connected directly over your local network.'
+        : 'Connected, but the last-seen time could not be saved.');
     } catch (initialError) {
       try {
         const recovered = await rediscoverDesktop(paired);
         if (!recovered) throw initialError;
         await getStatus(recovered);
-        await savePairing(recovered);
-        setDesktop(recovered);
+        const seenAt = new Date().toISOString();
+        const updated = { ...recovered, lastSeenAt: seenAt };
+        const saved = await savePairing(updated).then(() => true, () => false);
+        setLastSeenAt(seenAt);
+        setDesktop(updated);
         setConnection('online');
-        setMessage('Reconnected after your desktop address changed.');
+        setMessage(saved
+          ? 'Reconnected after your desktop address changed.'
+          : 'Reconnected, but the new desktop address could not be saved.');
       } catch {
         setConnection('offline');
         setMessage(errorMessage(initialError));
@@ -258,6 +274,7 @@ export default function App() {
       <ActionSurface
         desktopName={desktop.desktopName} connection={connection} busy={busy} message={message}
         onRefresh={() => void refresh()}
+        onSettings={() => setSettingsOpen(true)}
         onSendClipboard={() => void run(async () => sendClipboard(desktop, await Clipboard.getStringAsync()))}
         onGetClipboard={() => void run(async () => {
           const result = await getClipboard(desktop);
@@ -270,11 +287,26 @@ export default function App() {
           { text: 'Cancel', style: 'cancel' },
           { text: 'Lock', style: 'destructive', onPress: () => void run(() => lockDesktop(desktop)) },
         ])}
-        onForget={() => Alert.alert('Forget this desktop?', 'You will need to pair again. Revoke this phone on the desktop too.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Forget', style: 'destructive', onPress: () => void clearPairing().then(() => setDesktop(null)) },
-        ])}
       />
+      <Modal visible={settingsOpen} animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
+        <SafeAreaView style={styles.homeRoot}>
+          <SettingsSurface
+            desktopName={desktop.desktopName}
+            desktopId={shortDesktopId(desktop.desktopId)}
+            connection={connection}
+            lastSeen={formatLastSeen(lastSeenAt)}
+            onOpenSystemSettings={() => void Linking.openSettings()}
+            onClose={() => setSettingsOpen(false)}
+            onForget={() => Alert.alert('Forget this desktop?', 'You will need to pair again. Revoke this phone on the desktop too.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Forget', style: 'destructive', onPress: () => void clearPairing().then(() => {
+                setSettingsOpen(false);
+                setDesktop(null);
+              }) },
+            ])}
+          />
+        </SafeAreaView>
+      </Modal>
       <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => {
         setComposerOpen(false);
         if (composerFromShare) {
@@ -382,6 +414,16 @@ function formatBytes(bytes: number): string {
 function transferPercent(sent: number, total: number): number {
   if (total <= 0) return 0;
   return Math.min(100, Math.max(0, (sent / total) * 100));
+}
+
+function shortDesktopId(desktopId: string): string {
+  return desktopId.replace(/^desk_/, '').slice(0, 12).toUpperCase();
+}
+
+function formatLastSeen(value?: string): string {
+  if (!value) return 'never on this phone';
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? 'at an unknown time' : date.toLocaleString();
 }
 
 const styles = StyleSheet.create({

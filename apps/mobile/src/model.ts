@@ -10,6 +10,7 @@ export type PairingCode = {
 export type PairedDesktop = Omit<PairingCode, 'secret'> & {
   clientToken: string;
   deviceId: string;
+  lastSeenAt?: string;
 };
 
 export type ConnectionState = 'checking' | 'online' | 'offline';
@@ -25,6 +26,16 @@ export type ActionSurfaceProps = {
   onSendFile: () => void;
   onLock: () => void;
   onRefresh: () => void;
+  onSettings: () => void;
+};
+
+export type SettingsSurfaceProps = {
+  desktopName: string;
+  desktopId: string;
+  connection: ConnectionState;
+  lastSeen: string;
+  onOpenSystemSettings: () => void;
+  onClose: () => void;
   onForget: () => void;
 };
 

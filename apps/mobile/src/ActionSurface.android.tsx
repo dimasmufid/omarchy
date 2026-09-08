@@ -23,7 +23,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
         </Card>
         <Text style={{ typography: 'bodyMedium' }}>{props.message}</Text>
         <TextButton enabled={!props.busy} onClick={props.onRefresh}><Text>Check connection</Text></TextButton>
-        <TextButton enabled={!props.busy} onClick={props.onForget}><Text color="#ba1a1a">Forget this desktop</Text></TextButton>
+        <TextButton enabled={!props.busy} onClick={props.onSettings}><Text>Settings</Text></TextButton>
       </Column>
     </Host>
   );

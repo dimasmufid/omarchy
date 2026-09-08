@@ -12,6 +12,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
       <Button title="Send text or URL" onPress={props.onSendText} />
       <Button title="Send file" onPress={props.onSendFile} />
       <Button title="Lock desktop" onPress={props.onLock} />
+      <Button title="Settings" onPress={props.onSettings} />
       <Text>{props.message}</Text>
     </View>
   );

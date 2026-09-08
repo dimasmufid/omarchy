@@ -31,7 +31,7 @@ export default function ActionSurface(props: ActionSurfaceProps) {
         <Text modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' })]}>{props.message}</Text>
         <Spacer />
         <Button label="Check connection" systemImage="arrow.clockwise" onPress={props.onRefresh} modifiers={[buttonStyle('borderless'), disabled(props.busy)]} />
-        <Button label="Forget this desktop" role="destructive" onPress={props.onForget} modifiers={[buttonStyle('borderless'), disabled(props.busy)]} />
+        <Button label="Settings" systemImage="gearshape" onPress={props.onSettings} modifiers={[buttonStyle('borderless'), disabled(props.busy)]} />
       </VStack>
     </Host>
   );
