@@ -14,7 +14,7 @@ import SettingsSurface from './src/SettingsSurface';
 import TextComposerSurface from './src/TextComposerSurface';
 import { getClipboard, getStatus, lockDesktop, OmarchyClientError, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText, updateDesktopEndpoint } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
-import { parsePairingCode } from './src/model';
+import { parseManualEndpoint, parsePairingCode } from './src/model';
 import { clearPairing, loadPairing, savePairing } from './src/storage';
 import { useLocalIncomingShare } from './src/useLocalIncomingShare';
 
@@ -432,20 +432,6 @@ function errorMessage(error: unknown): string {
     return 'The desktop is unreachable. Check the LAN connection and that omarchy-linkd is running.';
   }
   return message;
-}
-
-function parseManualEndpoint(hostValue: string, portValue: string):
-  | { ok: true; host: string; port: number }
-  | { ok: false; message: string } {
-  const host = hostValue.trim().replace(/^\[|\]$/g, '');
-  const port = Number(portValue.trim());
-  if (!host || /\s|\/|:\/\//.test(host)) {
-    return { ok: false, message: 'Enter a hostname or IP address without https:// or a path.' };
-  }
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return { ok: false, message: 'Enter a port from 1 to 65535.' };
-  }
-  return { ok: true, host, port };
 }
 
 function filenameFromUri(uri: string, fallback: string): string {

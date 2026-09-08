@@ -72,7 +72,16 @@ export type SettingsSurfaceProps = {
 };
 
 export function parsePairingCode(value: string): PairingCode {
-  const url = new URL(value.trim());
+  const raw = value.trim();
+  if (raw.length === 0 || raw.length > 2048) {
+    throw new Error('The pairing code is empty or too large.');
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('This is not a valid Omarchy pairing code.');
+  }
   if (url.protocol !== 'omarchy:' || url.hostname !== 'pair') {
     throw new Error('This is not an Omarchy pairing code.');
   }
@@ -88,12 +97,63 @@ export function parsePairingCode(value: string): PairingCode {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('The pairing code contains an invalid port.');
   }
+  const desktopId = required('desktop');
+  const desktopName = required('name').trim();
+  const secret = required('secret');
+  const fingerprint = required('fp');
+  const host = normalizeHost(required('host'));
+  if (!/^desk_[a-f0-9]{32}$/.test(desktopId)) {
+    throw new Error('The pairing code contains an invalid desktop identity.');
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) {
+    throw new Error('The pairing code contains an invalid one-time secret.');
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/.test(fingerprint)) {
+    throw new Error('The pairing code contains an invalid certificate fingerprint.');
+  }
+  if (!desktopName || utf8ByteLength(desktopName) > 63 || [...desktopName].some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
+    throw new Error('The pairing code contains an invalid desktop name.');
+  }
   return {
-    desktopId: required('desktop'),
-    desktopName: required('name'),
-    secret: required('secret'),
-    fingerprint: required('fp'),
-    host: required('host'),
+    desktopId,
+    desktopName,
+    secret,
+    fingerprint,
+    host,
     port,
   };
+}
+
+export function parseManualEndpoint(hostValue: string, portValue: string):
+  | { ok: true; host: string; port: number }
+  | { ok: false; message: string } {
+  let host: string;
+  try {
+    host = normalizeHost(hostValue);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Enter a valid hostname or IP address.' };
+  }
+  const port = Number(portValue.trim());
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, message: 'Enter a port from 1 to 65535.' };
+  }
+  return { ok: true, host, port };
+}
+
+function normalizeHost(value: string): string {
+  const raw = value.trim();
+  const hasOpeningBracket = raw.startsWith('[');
+  const hasClosingBracket = raw.endsWith(']');
+  if (hasOpeningBracket !== hasClosingBracket) {
+    throw new Error('Enter a valid hostname or IP address.');
+  }
+  const host = hasOpeningBracket ? raw.slice(1, -1) : raw;
+  if (!host || host.length > 253 || /\s|[/?#@]|:\/\/|[\[\]]|[\u0000-\u001f\u007f]/.test(host)) {
+    throw new Error('Enter a hostname or IP address without https:// or a path.');
+  }
+  return host;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
