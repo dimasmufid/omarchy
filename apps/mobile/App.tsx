@@ -26,6 +26,7 @@ type PendingFile = {
 export default function App() {
   const incomingShare = useLocalIncomingShare();
   const handledShare = useRef<string | null>(null);
+  const pairingInFlight = useRef(false);
   const [desktop, setDesktop] = useState<PairedDesktop | null>();
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [busy, setBusy] = useState(false);
@@ -169,13 +170,15 @@ export default function App() {
   };
 
   const pair = async (rawCode: string) => {
-    if (busy) return;
+    if (pairingInFlight.current) return;
+    pairingInFlight.current = true;
     setScannerOpen(false);
     setBusy(true);
-    setMessage('Waiting for approval on your desktop…');
     try {
+      const code = parsePairingCode(rawCode);
+      setMessage(`Waiting for approval on ${code.desktopName} · ${shortDesktopId(code.desktopId)}…`);
       const id = `phone_${Crypto.randomUUID().replaceAll('-', '')}`;
-      const paired = await pairDesktop(parsePairingCode(rawCode), id);
+      const paired = await pairDesktop(code, id);
       await savePairing(paired);
       setDesktop(paired);
       setManualCode('');
@@ -183,6 +186,7 @@ export default function App() {
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
+      pairingInFlight.current = false;
       setBusy(false);
     }
   };
@@ -398,7 +402,21 @@ export default function App() {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong.';
+  const message = error instanceof Error ? error.message : 'Something went wrong.';
+  const normalized = message.toLowerCase();
+  if (normalized.includes('canceled') || normalized.includes('cancelled')) {
+    return 'File transfer canceled. You can retry when ready.';
+  }
+  if (normalized.includes('identity') || normalized.includes('certificate') || normalized.includes('trust anchor')) {
+    return 'Desktop identity mismatch. Do not continue; create a new pairing code on the desktop.';
+  }
+  if (normalized.includes('timed out') || normalized.includes('timeout')) {
+    return 'The desktop did not respond. Keep both devices awake on the same network, then retry.';
+  }
+  if (normalized.includes('network request failed') || normalized.includes('connection refused') || normalized.includes('unreachable') || normalized.includes('could not connect')) {
+    return 'The desktop is unreachable. Check the LAN connection and that omarchy-linkd is running.';
+  }
+  return message;
 }
 
 function filenameFromUri(uri: string, fallback: string): string {

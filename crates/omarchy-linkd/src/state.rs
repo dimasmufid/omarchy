@@ -61,6 +61,7 @@ pub enum PairDecision {
 pub struct PairWindow {
     pub secret: String,
     pub expires_at: u64,
+    pub failed_attempts: u8,
     pub request: Option<PairRequest>,
     pub decision: Option<PairDecision>,
     pub notify: Arc<Notify>,
@@ -121,6 +122,7 @@ impl AppState {
         *self.pairing.lock().await = Some(PairWindow {
             secret: secret.clone(),
             expires_at,
+            failed_attempts: 0,
             request: None,
             decision: None,
             notify,

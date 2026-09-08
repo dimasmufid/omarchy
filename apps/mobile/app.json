@@ -5,7 +5,7 @@
     "scheme": "omarchy-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-production.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,

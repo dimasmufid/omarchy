@@ -38,6 +38,8 @@ use crate::{
     state::{AppState, PairDecision},
 };
 
+const MAX_PAIRING_FAILURES: u8 = 8;
+
 #[derive(Debug, Clone)]
 pub struct RunConfig {
     pub bind_ip: IpAddr,
@@ -104,7 +106,14 @@ async fn pair_request(
                 "The pairing code has expired",
             ));
         }
+        if window.failed_attempts >= MAX_PAIRING_FAILURES {
+            return Err(AppError::too_many(
+                "pair.rate_limited",
+                "Too many invalid pairing attempts; create a new pairing code",
+            ));
+        }
         if !crate::state::constant_time_string_eq(&window.secret, &request.secret) {
+            window.failed_attempts = window.failed_attempts.saturating_add(1);
             return Err(AppError::unauthorized(
                 "pair.invalid_secret",
                 "The pairing code is invalid",
@@ -553,6 +562,10 @@ impl AppError {
         Self::new(StatusCode::PAYLOAD_TOO_LARGE, code, message, false)
     }
 
+    fn too_many(code: &str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, code, message, true)
+    }
+
     fn service(code: &str, message: impl Into<String>, retryable: bool) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, code, message, retryable)
     }
@@ -623,5 +636,35 @@ mod tests {
             std::fs::read_dir(paths.inbox_dir).expect("inbox").count(),
             0
         );
+    }
+
+    #[tokio::test]
+    async fn pairing_window_limits_invalid_secrets() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let paths = AppPaths::under(temporary.path());
+        let state = AppState::load(paths, "test-fingerprint".into()).expect("state");
+        state
+            .open_pairing_window("127.0.0.1", 42_783)
+            .await
+            .expect("pairing window");
+        let request = PairRequest {
+            secret: "x".repeat(43),
+            device_id: "phone_test".into(),
+            device_name: "Test phone".into(),
+            platform: omarchy_link_protocol::MobilePlatform::Android,
+            app_version: "0.1.0".into(),
+        };
+
+        for _ in 0..MAX_PAIRING_FAILURES {
+            let error = pair_request(State(Arc::clone(&state)), Json(request.clone()))
+                .await
+                .expect_err("invalid secret");
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+        }
+        let limited = pair_request(State(state), Json(request))
+            .await
+            .expect_err("rate limited");
+        assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(limited.body.error.code, "pair.rate_limited");
     }
 }
