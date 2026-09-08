@@ -60,7 +60,11 @@ export async function pairDesktop(code: PairingCode, deviceId: string): Promise<
 }
 
 export async function rediscoverDesktop(desktop: PairedDesktop): Promise<PairedDesktop | null> {
-  const discovered = (await discoverDesktops(2_000)).find((candidate) => candidate.id === desktop.desktopId);
+  const discovered = (await discoverDesktops(2_000)).find((candidate) =>
+    candidate.protocolVersion === 1
+    && candidate.id.length === 20
+    && desktop.desktopId.startsWith(candidate.id)
+  );
   if (!discovered) return null;
   return { ...desktop, host: discovered.host, port: discovered.port, desktopName: discovered.name };
 }
