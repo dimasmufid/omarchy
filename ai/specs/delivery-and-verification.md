@@ -420,6 +420,9 @@ Desktop:
 Mobile:
 
 - Produce internal development builds, beta-channel builds, then store builds.
+- Keep the Expo project ID, Apple team, Play signing key, and store credentials
+  account-owned; link them with `eas init` and EAS credential management rather
+  than committing them to this repository.
 - Runtime version binds JavaScript bundles to compatible native capability sets.
 - Release notes disclose permission or background-behavior changes.
 - Store privacy declarations are generated from an owner-reviewed checklist,

@@ -230,6 +230,14 @@ impl AppState {
         save_snapshot(&self.paths.state_file(), &persisted)?;
         Ok(true)
     }
+
+    pub async fn remove_lock_key(&self, key: &str) -> io::Result<()> {
+        let mut persisted = self.persisted.write().await;
+        persisted
+            .recent_lock_keys
+            .retain(|existing| existing != key);
+        save_snapshot(&self.paths.state_file(), &persisted)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,5 +320,27 @@ mod tests {
         let state = PersistedState::fresh();
         assert!(state.desktop_id.starts_with("desk_"));
         assert!(state.peer.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_lock_key_can_be_retried_after_reconciliation() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let state =
+            AppState::load(AppPaths::under(temporary.path()), "fingerprint".into()).expect("state");
+
+        assert!(
+            state
+                .register_lock_key("lock_test")
+                .await
+                .expect("register")
+        );
+        assert!(
+            !state
+                .register_lock_key("lock_test")
+                .await
+                .expect("duplicate")
+        );
+        state.remove_lock_key("lock_test").await.expect("remove");
+        assert!(state.register_lock_key("lock_test").await.expect("retry"));
     }
 }

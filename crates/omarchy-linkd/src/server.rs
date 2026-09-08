@@ -388,13 +388,23 @@ async fn lock(
             message: "Desktop lock already accepted".into(),
         }));
     }
-    adapters::lock_desktop().await.map_err(|_| {
-        AppError::service(
+    if adapters::lock_desktop().await.is_err() {
+        state
+            .remove_lock_key(&request.idempotency_key)
+            .await
+            .map_err(|_| {
+                AppError::service(
+                    "action.outcome_unknown",
+                    "Desktop lock failed and its retry state could not be reconciled",
+                    false,
+                )
+            })?;
+        return Err(AppError::service(
             "action.lock_failed",
             "Omarchy could not lock the desktop",
             true,
-        )
-    })?;
+        ));
+    }
     Ok(Json(OperationResponse {
         operation_id: request.idempotency_key,
         completed: true,
@@ -666,5 +676,37 @@ mod tests {
             .expect_err("rate limited");
         assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(limited.body.error.code, "pair.rate_limited");
+    }
+
+    #[tokio::test]
+    async fn revocation_immediately_denies_authenticated_status() {
+        let temporary = tempfile::tempdir().expect("temp dir");
+        let paths = AppPaths::under(temporary.path());
+        let state = AppState::load(paths, "test-fingerprint".into()).expect("state");
+        state.persisted.write().await.peer = Some(PeerRecord {
+            device_id: "phone_test".into(),
+            device_name: "Test phone".into(),
+            token_hash: hash_token("test-token"),
+            paired_at: "2026-09-08T00:00:00Z".into(),
+            permissions: Permission::all_phase_one().to_vec(),
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            "Bearer test-token".parse().expect("header"),
+        );
+
+        assert!(
+            status(State(Arc::clone(&state)), headers.clone())
+                .await
+                .is_ok()
+        );
+        state.revoke().await.expect("revoke");
+        let error = status(State(state), headers)
+            .await
+            .expect_err("revoked token must fail");
+
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+        assert_eq!(error.body.error.code, "auth.denied");
     }
 }

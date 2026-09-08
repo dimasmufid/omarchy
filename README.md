@@ -32,6 +32,20 @@ omarchy-mobile inbox --open
 journalctl --user -u omarchy-linkd -f
 ```
 
+If the desktop firewall denies unsolicited LAN traffic, allow only the daemon's
+TCP port from the current trusted LAN. Replace the example subnet with the one
+reported by `ip route`; do not expose this port to every network:
+
+```bash
+sudo ufw allow proto tcp from 192.168.100.0/24 to any port 42783 \
+  comment 'Omarchy Mobile LAN'
+sudo ufw reload
+```
+
+Remove or replace that rule when the computer moves to a different LAN. Pairing
+and every operation still require the certificate pin and paired-phone token;
+the firewall rule alone grants no application access.
+
 ## Run the mobile app
 
 This app contains custom native code and system share integrations, so Expo Go
