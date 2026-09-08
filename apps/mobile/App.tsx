@@ -8,6 +8,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 
 import ActionSurface from './src/ActionSurface';
+import PairingSurface from './src/PairingSurface';
 import SettingsSurface from './src/SettingsSurface';
 import { getClipboard, getStatus, lockDesktop, pairDesktop, rediscoverDesktop, sendClipboard, sendFile, sendText, updateDesktopEndpoint } from './src/client';
 import type { ConnectionState, PairedDesktop } from './src/model';
@@ -250,19 +251,14 @@ export default function App() {
     return (
       <SafeAreaView style={styles.pairRoot}>
         <StatusBar style="light" />
-        <View style={styles.pairContent}>
-          <Text style={styles.eyebrow}>OWN YOUR CONNECTION</Text>
-          <Text style={styles.hero}>Your Omarchy, in your pocket.</Text>
-          <Text style={styles.body}>Run `omarchy-mobile pair`, then scan its QR code. Nothing leaves your local network.</Text>
-          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={openScanner} disabled={busy}>
-            <Text style={styles.primaryButtonText}>Scan pairing code</Text>
-          </Pressable>
-          <TextInput accessibilityLabel="Pairing code" autoCapitalize="none" autoCorrect={false} multiline placeholder="Or paste omarchy://pair…" placeholderTextColor="#817987" style={styles.input} value={manualCode} onChangeText={setManualCode} />
-          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => void pair(manualCode)} disabled={busy || !manualCode.trim()}>
-            <Text style={styles.secondaryButtonText}>{busy ? 'Waiting for desktop…' : 'Pair with pasted code'}</Text>
-          </Pressable>
-          <Text accessibilityLiveRegion="polite" style={styles.message}>{message}</Text>
-        </View>
+        <PairingSurface
+          busy={busy}
+          message={message}
+          manualCode={manualCode}
+          onManualCodeChange={setManualCode}
+          onPair={() => void pair(manualCode)}
+          onScan={() => void openScanner()}
+        />
         <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
           <View style={styles.cameraRoot}>
             <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={({ data }) => void pair(data)} />
@@ -485,12 +481,9 @@ function formatLastSeen(value?: string): string {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  pairRoot: { flex: 1, backgroundColor: '#0d0b12' }, pairContent: { flex: 1, justifyContent: 'center', gap: 18, padding: 28 },
-  eyebrow: { color: '#a78bfa', fontSize: 12, fontWeight: '800', letterSpacing: 2 }, hero: { color: '#fafafa', fontSize: 42, fontWeight: '800', letterSpacing: -1.5 },
-  title: { fontSize: 34, fontWeight: '800' }, body: { color: '#c4becb', fontSize: 17, lineHeight: 25 },
-  primaryButton: { alignItems: 'center', borderRadius: 18, backgroundColor: '#7c3aed', padding: 17 }, primaryButtonText: { color: 'white', fontSize: 17, fontWeight: '700' },
-  secondaryButton: { alignItems: 'center', borderRadius: 18, borderColor: '#6d6474', borderWidth: 1, padding: 15 }, secondaryButtonText: { color: '#f5f3f7', fontSize: 16, fontWeight: '600' },
-  input: { minHeight: 92, borderRadius: 16, backgroundColor: '#211d28', color: '#fff', padding: 15, textAlignVertical: 'top' }, message: { color: '#a9a1b1', minHeight: 42 },
+  pairRoot: { flex: 1, backgroundColor: Platform.OS === 'android' ? '#fffbfe' : '#0d0b12' },
+  title: { fontSize: 34, fontWeight: '800' },
+  primaryButtonText: { color: 'white', fontSize: 17, fontWeight: '700' },
   homeRoot: { flex: 1, backgroundColor: Platform.OS === 'android' ? '#fffbfe' : '#f2f2f7' }, cameraRoot: { flex: 1, justifyContent: 'flex-end', padding: 24 },
   scanGuide: { position: 'absolute', top: 80, left: 24, right: 24, alignItems: 'center', borderRadius: 18, backgroundColor: '#000b', padding: 16 }, scanText: { color: 'white', fontSize: 17, fontWeight: '600' },
   closeButton: { alignItems: 'center', borderRadius: 18, backgroundColor: '#7c3aed', padding: 17, marginBottom: 24 }, modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0007' },

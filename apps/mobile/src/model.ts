@@ -15,6 +15,15 @@ export type PairedDesktop = Omit<PairingCode, 'secret'> & {
 
 export type ConnectionState = 'checking' | 'online' | 'offline';
 
+export type PairingSurfaceProps = {
+  busy: boolean;
+  message: string;
+  manualCode: string;
+  onManualCodeChange: (value: string) => void;
+  onPair: () => void;
+  onScan: () => void;
+};
+
 export type ActionSurfaceProps = {
   desktopName: string;
   connection: ConnectionState;
